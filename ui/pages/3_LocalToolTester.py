@@ -11,7 +11,6 @@ from ui.utils import (
     about_agno,
     add_message,
     display_tool_calls,
-    example_inputs, # May need custom examples for local tools
     initialize_agent_session_state,
     selected_model, # Model selection might be less relevant if the agent is for fixed tool testing
     # session_selector, # Session management might be simplified or removed
