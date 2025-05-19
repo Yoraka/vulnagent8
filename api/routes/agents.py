@@ -20,6 +20,7 @@ class Model(str, Enum):
     gpt_4o = "gpt-4o"
     o3_mini = "o3-mini"
     qwen3_235b_a22b = "qwen/qwen3-235b-a22b"
+    grok3_mini = "grok-3-mini-beta"
 
 @agents_router.get("", response_model=List[str])
 async def list_agents():

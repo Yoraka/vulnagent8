@@ -3,6 +3,7 @@ from typing import Optional
 
 from agno.agent import Agent
 from agno.models.openrouter import OpenRouter
+from agno.models.xai import xAI
 from agno.tools.shell import ShellTools
 from agno.tools.file import FileTools
 from agno.utils.pprint import pprint_run_response
@@ -63,7 +64,7 @@ def get_local_tool_tester_agent(
         agent_id="local_tool_tester_v2",
         user_id=user_id,
         session_id=session_id,
-        model=OpenRouter(id=model_id),
+        model=xAI(id=model_id),
         tools=[shell_tools, file_tools],
         description=agent_description,
         instructions=agent_instructions,

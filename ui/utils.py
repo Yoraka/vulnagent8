@@ -28,6 +28,7 @@ async def selected_model() -> str:
         "gpt-4o": "gpt-4o",
         "o3-mini": "o3-mini",
         "qwen3-235b-a22b": "qwen/qwen3-235b-a22b",
+        "grok-3-mini-beta": "grok-3-mini-beta",
     }
     selected_model = st.sidebar.selectbox(
         "Choose a model",

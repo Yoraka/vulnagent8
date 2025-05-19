@@ -20,7 +20,8 @@ RUN uv pip sync requirements.txt --system
 COPY . .
 
 # Set permissions for the /app directory
-RUN chown -R ${USER}:${USER} ${APP_DIR}
+RUN chown -R ${USER}:${USER} ${APP_DIR} \
+    && chmod +x ${APP_DIR}/scripts/entrypoint.sh
 
 # Switch to non-root user
 USER ${USER}

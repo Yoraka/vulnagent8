@@ -32,3 +32,5 @@ dist
 venv*
 
 v7_prd.md
+
+aienv/
