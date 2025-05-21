@@ -5,7 +5,7 @@ from agno.agent import Agent
 from agno.tools.streamlit.components import check_password
 from agno.utils.log import logger
 
-from agents.local_tool_tester import get_local_tool_tester_agent as get_local_security_auditor_agent, HARDCODED_WORKSPACE_PATH
+from agents.local_tool_tester import get_local_security_auditor_agent, HARDCODED_WORKSPACE_PATH
 from ui.css import CUSTOM_CSS
 from ui.utils import (
     about_agno,
@@ -21,12 +21,12 @@ from ui.utils import (
 nest_asyncio.apply()
 
 st.set_page_config(
-    page_title="Local Security Auditor",
-    page_icon=":shield:",
+    page_title="Java Security Auditor",
+    page_icon="🛡️",
     layout="wide",
 )
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
-agent_name = "local_security_auditor"
+agent_name = "java_security_auditor_v1"
 
 if "editing_message_idx" not in st.session_state:
     st.session_state.editing_message_idx = None
@@ -41,14 +41,14 @@ if agent_name not in st.session_state:
     }
 
 async def header():
-    st.markdown("<h1 class='heading'>Local Security Auditor</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='heading'>Java Security Auditor</h1>", unsafe_allow_html=True)
     st.markdown(
-        "<p class='subheading'>A white-box security auditing expert to analyze code, configurations, and system states.</p>",
+        "<p class='subheading'>A white-box security auditing expert to identify attack surfaces in Java backend projects.</p>",
         unsafe_allow_html=True,
     )
 
 async def body() -> None:
-    user_id = st.sidebar.text_input(":technologist: Username", value="AuditorUser_Default")
+    user_id = st.sidebar.text_input(":technologist: Username", value="JavaAuditor_User")
     model_id = await selected_model()
 
     # Sidebar buttons for New Chat and Delete Chat
@@ -105,9 +105,13 @@ async def body() -> None:
         # This case should ideally be handled by session_selector's callback updating the agent directly.
         # However, if session_selector only updates a st.session_state key for the ID, 
         # then we might need to re-init. For agno's selector, it should replace the agent object.
-        logger.info(f"UI session ID {current_ui_session_id} differs from agent's {auditor_agent.session_id}. Trusting agent's ID or re-evaluating.")
+        logger.info(f"Session ID mismatch. UI had {current_ui_session_id}, agent has {auditor_agent.session_id}. Assuming agent was updated by selector. Clearing UI messages.")
         # If session_selector has updated the agent object, its session_id is king.
         # The current_ui_session_id should then align with auditor_agent.session_id from session_state.
+        st.session_state[agent_name]["messages"] = []
+        st.session_state[agent_name]["session_id"] = auditor_agent.session_id # Align UI session_id with agent's
+        current_ui_session_id = auditor_agent.session_id # Update for current run
+        st.session_state.editing_message_idx = None # Reset editing state on session change
 
     if re_initialize_agent:
         # When re-initializing, use current_ui_session_id if it's set (e.g. by session_selector recovering state),
@@ -122,7 +126,7 @@ async def body() -> None:
     # Ensure we are using the agent from session state after any potential re-initialization
     auditor_agent = st.session_state[agent_name]["agent"]
     if not auditor_agent: # Should not happen if logic above is correct
-        st.error("Agent could not be initialized. Please refresh.")
+        st.error("Auditor Agent could not be initialized. Please refresh or select a user.")
         return
 
     # Load session data (like ID and runs) from DB using the agent's current session_id configuration
@@ -155,7 +159,7 @@ async def body() -> None:
         return # Stop further execution if session loading fails
 
     # Chat Input
-    prompt_placeholder = f"Ask the Security Auditor... (e.g., 'analyze file {HARDCODED_WORKSPACE_PATH}/app.py')"
+    prompt_placeholder = f"Ask the Java Security Auditor... (e.g., 'analyze {HARDCODED_WORKSPACE_PATH}/pom.xml')"
     user_prompt = st.chat_input(prompt_placeholder, key=f"{agent_name}_main_chat_input")
 
     if user_prompt and st.session_state.editing_message_idx is None:
@@ -163,11 +167,14 @@ async def body() -> None:
         if auditor_agent and auditor_agent.session_id:
             await add_message(agent_name, "user", user_prompt)
         else:
-            st.warning("Agent not fully initialized to receive messages. Try refreshing or starting a new chat.")
+            st.warning("Agent not ready. Try refreshing or starting a new chat.")
 
     # Welcome message if no messages and not editing
     if not st.session_state[agent_name]["messages"] and st.session_state.editing_message_idx is None:
-         st.info(f"Welcome! Ask the Local Security Auditor. Workspace: {HARDCODED_WORKSPACE_PATH}. Session: {st.session_state[agent_name]['session_id'][:8]}...")
+        if st.session_state[agent_name].get("session_id"):
+             st.info(f"Java Security Auditor ready. Workspace: {HARDCODED_WORKSPACE_PATH}. Session: {st.session_state[agent_name]['session_id'][:8]}...")
+        else:
+             st.info(f"Java Security Auditor ready. Start a new chat or select a historical session. Workspace: {HARDCODED_WORKSPACE_PATH}.")
 
     # Display messages and editing UI (Copying existing robust logic)
     # ... (previous message display and editing logic remains largely the same, ensure keys are unique)
@@ -212,7 +219,7 @@ async def body() -> None:
             with st.chat_message("assistant", avatar="🛡️"):
                 tool_calls_container = st.empty()
                 resp_container = st.empty()
-                with st.spinner(":shield: Analyzing..."):
+                with st.spinner("🛡️ Analyzing project..."):
                     response_text = ""
                     try:
                         # Prevent saving empty user messages that didn't lead to a run
@@ -252,7 +259,7 @@ async def body() -> None:
         await session_selector(agent_name, auditor_agent, get_local_security_auditor_agent, user_id, model_id)
         await utilities_widget(agent_name, auditor_agent)
     else:
-        st.sidebar.text("Session history unavailable (agent/storage not ready).")
+        st.sidebar.text("Session history features unavailable.")
 
 async def main():
     # Initial setup of session_state structure if it doesn't exist.
