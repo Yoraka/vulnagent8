@@ -71,7 +71,11 @@ dev_streamlit = Streamlit(
         '/Users/fancyechocui/Downloads/mall-master': {  # Host path
             'bind': '/data/mall_code',  # Container path
             'mode': 'rw'  # Read-write access
-        }
+        },
+        '/Users/fancyechocui/Downloads/mall-admin-web-master': {  # Host path
+            'bind': '/data/mall_admin_web',  # Containers path
+            'mode': 'rw'  # Read-write access
+        },
     }
 )
 
