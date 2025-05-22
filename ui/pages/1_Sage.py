@@ -70,29 +70,33 @@ async def body() -> None:
     # Load Agent Session from the database
     ####################################################################
     try:
-        st.session_state[agent_name]["session_id"] = sage.load_session()
-    except Exception:
-        st.warning("Could not create Agent session, is the database running?")
+        # 只在有 session_id 的情况下加载会话，否则保持为 None
+        if sage.session_id:
+            loaded_session_id = sage.load_session()
+            st.session_state[agent_name]["session_id"] = loaded_session_id
+            if sage.session_id != loaded_session_id: # Keep agent's internal ID and UI's tracking in sync
+                sage.session_id = loaded_session_id
+    except Exception as e:
+        logger.error(f"Error loading agent session: {e}", exc_info=True)
+        st.warning("Could not create Sage session, is the database running?")
         return
 
     ####################################################################
     # Load agent runs (i.e. chat history) from memory is messages is empty
     ####################################################################
-    if sage.memory:
-        agent_runs = sage.memory.runs
-        if len(agent_runs) > 0:
-            # If there are runs, load the messages
-            logger.debug("Loading run history")
-            # Clear existing messages
-            st.session_state[agent_name]["messages"] = []
-            # Loop through the runs and add the messages to the messages list
-            for agent_run in agent_runs:
-                if agent_run.message is not None:
-                    await add_message(agent_name, agent_run.message.role, str(agent_run.message.content))
-                if agent_run.response is not None:
-                    await add_message(
-                        agent_name, "assistant", str(agent_run.response.content), agent_run.response.tools
-                    )
+    if sage.memory and sage.memory.runs and not st.session_state[agent_name]["messages"]:
+        # If there are runs, load the messages
+        logger.debug("Loading run history")
+        # Clear existing messages
+        st.session_state[agent_name]["messages"] = []
+        # Loop through the runs and add the messages to the messages list
+        for agent_run in sage.memory.runs:
+            if agent_run.message is not None:
+                await add_message(agent_name, agent_run.message.role, str(agent_run.message.content))
+            if agent_run.response is not None:
+                await add_message(
+                    agent_name, "assistant", str(agent_run.response.content), agent_run.response.tools
+                )
 
     ####################################################################
     # Get user input

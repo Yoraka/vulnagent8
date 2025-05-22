@@ -69,29 +69,33 @@ async def body() -> None:
     # Load Agent Session from the database
     ####################################################################
     try:
-        st.session_state[agent_name]["session_id"] = scholar.load_session()
-    except Exception:
+        # 只在有 session_id 的情况下加载会话，否则保持为 None
+        if scholar.session_id:
+            loaded_session_id = scholar.load_session()
+            st.session_state[agent_name]["session_id"] = loaded_session_id
+            if scholar.session_id != loaded_session_id: # Keep agent's internal ID and UI's tracking in sync
+                scholar.session_id = loaded_session_id
+    except Exception as e:
+        logger.error(f"Error loading agent session: {e}", exc_info=True)
         st.warning("Could not create Scholar session, is the database running?")
         return
 
     ####################################################################
     # Load agent runs (i.e. chat history) from memory is messages is empty
     ####################################################################
-    if scholar.memory:
-        agent_runs = scholar.memory.runs
-        if len(agent_runs) > 0:
-            # If there are runs, load the messages
-            logger.debug("Loading run history")
-            # Clear existing messages
-            st.session_state[agent_name]["messages"] = []
-            # Loop through the runs and add the messages to the messages list
-            for agent_run in agent_runs:
-                if agent_run.message is not None:
-                    await add_message(agent_name, agent_run.message.role, str(agent_run.message.content))
-                if agent_run.response is not None:
-                    await add_message(
-                        agent_name, "assistant", str(agent_run.response.content), agent_run.response.tools
-                    )
+    if scholar.memory and scholar.memory.runs and not st.session_state[agent_name]["messages"]:
+        # If there are runs, load the messages
+        logger.debug("Loading run history")
+        # Clear existing messages
+        st.session_state[agent_name]["messages"] = []
+        # Loop through the runs and add the messages to the messages list
+        for agent_run in scholar.memory.runs:
+            if agent_run.message is not None:
+                await add_message(agent_name, agent_run.message.role, str(agent_run.message.content))
+            if agent_run.response is not None:
+                await add_message(
+                    agent_name, "assistant", str(agent_run.response.content), agent_run.response.tools
+                )
 
     ####################################################################
     # Get user input

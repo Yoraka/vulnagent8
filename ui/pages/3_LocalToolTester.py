@@ -40,6 +40,12 @@ if agent_name not in st.session_state:
         "session_id": None # Explicitly track current session_id for clarity
     }
 
+# 在初始化时检查是否有持久化的 session_id
+if "persisted_session_id" in st.session_state:
+    current_ui_session_id = st.session_state["persisted_session_id"]
+else:
+    current_ui_session_id = None
+
 async def header():
     st.markdown("<h1 class='heading'>Java Security Auditor</h1>", unsafe_allow_html=True)
     st.markdown(
@@ -54,33 +60,39 @@ async def body() -> None:
     # Sidebar buttons for New Chat and Delete Chat
     if st.sidebar.button("✨ New Chat", key="new_chat_button"):
         logger.info(f"User {user_id} started a new chat for {agent_name}.")
-        st.session_state[agent_name]["agent"] = get_local_security_auditor_agent(user_id=user_id, model_id=model_id, session_id=None)
+        # Create new agent and ensure session_id is set
+        new_agent = get_local_security_auditor_agent(user_id=user_id, model_id=model_id, session_id=None)
+        # Ensure session_id is set before updating state
+        if not new_agent.session_id:
+            new_agent.load_session()  # This will create a new session if none exists
+        st.session_state[agent_name]["agent"] = new_agent
         st.session_state[agent_name]["messages"] = []
-        st.session_state[agent_name]["session_id"] = st.session_state[agent_name]["agent"].session_id # Will be a new ID from agent
+        st.session_state[agent_name]["session_id"] = new_agent.session_id
         st.session_state.editing_message_idx = None
         st.rerun()
 
-    if st.session_state[agent_name]["agent"] and st.session_state[agent_name]["session_id"]:
-        if st.sidebar.button("🗑️ Delete Current Chat", key="delete_chat_button"):
-            session_to_delete = st.session_state[agent_name]["session_id"]
-            current_agent = st.session_state[agent_name]["agent"]
-            if session_to_delete and current_agent and current_agent.storage:
-                try:
-                    logger.info(f"User {user_id} deleting session {session_to_delete} for {agent_name}.")
-                    current_agent.storage.delete_session(session_to_delete)
-                    current_agent.storage.delete_runs(session_to_delete)
-                    st.toast(f"Session {session_to_delete[:8]}... deleted successfully!", icon="🗑️")
-                    # Reset to a new chat state
-                    st.session_state[agent_name]["agent"] = get_local_security_auditor_agent(user_id=user_id, model_id=model_id, session_id=None)
-                    st.session_state[agent_name]["messages"] = []
-                    st.session_state[agent_name]["session_id"] = st.session_state[agent_name]["agent"].session_id
-                    st.session_state.editing_message_idx = None
-                    st.rerun()
-                except Exception as e:
-                    logger.error(f"Error deleting session {session_to_delete}: {e}", exc_info=True)
-                    st.sidebar.error(f"Failed to delete session: {e}")
-            else:
-                st.sidebar.warning("No active session to delete or storage not configured.")
+    # 删除按钮始终显示
+    if st.sidebar.button("🗑️ Delete Current Chat", key="delete_chat_button"):
+        session_to_delete = st.session_state[agent_name].get("session_id")
+        current_agent = st.session_state[agent_name].get("agent")
+        
+        if session_to_delete and current_agent and current_agent.storage:
+            try:
+                logger.info(f"User {user_id} deleting session {session_to_delete} for {agent_name}.")
+                current_agent.storage.delete_session(session_to_delete)
+                current_agent.storage.delete_runs(session_to_delete)
+                st.toast(f"Session {session_to_delete[:8]}... deleted successfully!", icon="🗑️")
+                # Reset to a new chat state
+                st.session_state[agent_name]["agent"] = get_local_security_auditor_agent(user_id=user_id, model_id=model_id, session_id=None)
+                st.session_state[agent_name]["messages"] = []
+                st.session_state[agent_name]["session_id"] = st.session_state[agent_name]["agent"].session_id
+                st.session_state.editing_message_idx = None
+                st.rerun()
+            except Exception as e:
+                logger.error(f"Error deleting session {session_to_delete}: {e}", exc_info=True)
+                st.sidebar.error(f"Failed to delete session: {e}")
+        else:
+            st.sidebar.warning("No active session to delete or storage not configured.")
 
     auditor_agent: Agent = st.session_state[agent_name]["agent"]
     current_ui_session_id = st.session_state[agent_name]["session_id"]
@@ -122,6 +134,10 @@ async def body() -> None:
         # If re-initializing, messages should be cleared to be reloaded from the new agent's context/session
         st.session_state[agent_name]["messages"] = []
         st.session_state.editing_message_idx = None
+        
+        # 在重新初始化时，确保 session_id 被正确设置
+        if auditor_agent and auditor_agent.session_id:
+            st.session_state[agent_name]["session_id"] = auditor_agent.session_id
     
     # Ensure we are using the agent from session state after any potential re-initialization
     auditor_agent = st.session_state[agent_name]["agent"]
@@ -132,27 +148,27 @@ async def body() -> None:
     # Load session data (like ID and runs) from DB using the agent's current session_id configuration
     # This load_session is crucial for populating agent.memory.runs for an existing session_id
     try:
-        # agent.load_session() ensures agent.session_id is valid (loads last for user, uses existing, or makes new if None)
-        # and loads runs into agent.memory for that session_id.
-        loaded_session_id = auditor_agent.load_session() 
-        st.session_state[agent_name]["session_id"] = loaded_session_id
-        if auditor_agent.session_id != loaded_session_id: # Keep agent's internal ID and UI's tracking in sync
-            auditor_agent.session_id = loaded_session_id
+        # 只在有 session_id 的情况下加载会话，否则保持为 None
+        if auditor_agent.session_id:
+            loaded_session_id = auditor_agent.load_session() 
+            st.session_state[agent_name]["session_id"] = loaded_session_id
+            if auditor_agent.session_id != loaded_session_id: # Keep agent's internal ID and UI's tracking in sync
+                auditor_agent.session_id = loaded_session_id
 
-        # Load history into UI state ONLY if UI messages are empty (e.g., after session switch / initial load)
-        # AND not currently in editing mode (to prevent reload during text_area interaction)
-        if not st.session_state[agent_name]["messages"] and st.session_state.editing_message_idx is None:
-            if auditor_agent.memory and auditor_agent.memory.runs:
-                logger.debug(f"Loading run history for session {loaded_session_id} into UI from agent.memory")
-                # Messages already cleared if agent was re-initialized. If not, this ensures clean load.
-                st.session_state[agent_name]["messages"] = [] 
-                for agent_run in auditor_agent.memory.runs:
-                    if agent_run.message is not None:
-                        await add_message(agent_name, agent_run.message.role, str(agent_run.message.content))
-                    if agent_run.response is not None:
-                        await add_message(
-                            agent_name, "assistant", str(agent_run.response.content), agent_run.response.tools
-                        )
+            # Load history into UI state ONLY if UI messages are empty (e.g., after session switch / initial load)
+            # AND not currently in editing mode (to prevent reload during text_area interaction)
+            if not st.session_state[agent_name]["messages"] and st.session_state.editing_message_idx is None:
+                if auditor_agent.memory and auditor_agent.memory.runs:
+                    logger.debug(f"Loading run history for session {loaded_session_id} into UI from agent.memory")
+                    # Messages already cleared if agent was re-initialized. If not, this ensures clean load.
+                    st.session_state[agent_name]["messages"] = [] 
+                    for agent_run in auditor_agent.memory.runs:
+                        if agent_run.message is not None:
+                            await add_message(agent_name, agent_run.message.role, str(agent_run.message.content))
+                        if agent_run.response is not None:
+                            await add_message(
+                                agent_name, "assistant", str(agent_run.response.content), agent_run.response.tools
+                            )
     except Exception as e:
         st.error(f"Error loading agent session: {e}. Is the database connected and schema correct?")
         logger.error(f"Error in agent.load_session() or subsequent history loading: {e}", exc_info=True)
@@ -257,7 +273,7 @@ async def body() -> None:
         # AND clear st.session_state[agent_name]["messages"]
         # This is standard behavior for agno's session_selector.
         await session_selector(agent_name, auditor_agent, get_local_security_auditor_agent, user_id, model_id)
-        await utilities_widget(agent_name, auditor_agent)
+        await utilities_widget(agent_name, auditor_agent, get_local_security_auditor_agent)
     else:
         st.sidebar.text("Session history features unavailable.")
 
