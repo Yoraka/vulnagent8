@@ -30,13 +30,13 @@ async def selected_model() -> str:
         "qwen3-235b-a22b": "qwen/qwen3-235b-a22b",
         "grok-3-mini-beta": "grok-3-beta",
     }
-    selected_model = st.sidebar.selectbox(
+    selected_model_key = st.sidebar.selectbox(
         "Choose a model",
         options=list(model_options.keys()),
         index=0,
         key="model_selector",
     )
-    return model_options[selected_model]
+    return model_options[selected_model_key]
 
 
 async def add_message(

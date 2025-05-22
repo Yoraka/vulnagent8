@@ -16,6 +16,7 @@ COPY requirements.txt ./
 # Install requirements
 RUN uv pip sync requirements.txt --system
 
+# RUN uv pip install agno==1.5.1
 # Copy project files
 COPY . .
 
