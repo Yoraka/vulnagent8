@@ -34,6 +34,10 @@ venv*
 v7_prd.md
 
 aienv/
+<<<<<<< HEAD
 
 .local/
 tmp/agents.db
+=======
+team_memory.sqlite
+>>>>>>> upstream/workflow-or-team
