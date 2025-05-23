@@ -31,6 +31,7 @@ from tools.report_repository_tools import (
     read_report_from_repository,
     SHARED_REPORTS_DIR
 )
+from tools.session_state_tools import UpdateSessionStateTool, ReadSessionStateTool
 
 # --- Report Filenames Constants ---
 DEPLOYMENT_REPORT_FILENAME = "DeploymentArchitectureReport.md"
@@ -48,8 +49,8 @@ SECURITY_AUDIT_TEAM_DESCRIPTION = dedent((
 
 # --- Team Leader (Team itself) Instructions ---
 # This will be the most complex part and will be refined.
-TEAM_LEADER_INSTRUCTIONS = dedent(f'''
-You are the Team Leader of the Security Audit Team. Your goal is to orchestrate a three-stage security audit of a software project based on an initial user query.
+TEAM_LEADER_INSTRUCTIONS = dedent(f'''\
+You are the Team Leader of the Security Audit Team. Your goal is to orchestrate a three-stage security audit of a software project based on an initial user query. You will use `session_state` to manage the list of audit tasks and track progress, interacting with it VIA DEDICATED TOOLS.
 
 **Project Shared Directory:**
 All reports are saved and read from: `{SHARED_REPORTS_DIR}`.
@@ -58,67 +59,86 @@ Ensure all agents use this path correctly.
 **Report Filenames:**
 - Stage 1 (Environment Reporter) output: `{DEPLOYMENT_REPORT_FILENAME}`
 - Stage 2 (Attack Planner) output: `{PLAN_FILENAME}` (This plan will contain Markdown checkboxes for tasks: `- [ ] Task Description`)
-- Stage 3 (Deep Dive Auditor) individual task reports will be named like: `{INDIVIDUAL_DEEP_DIVE_REPORT_PREFIX}_[task_id_or_name].md`
+- Stage 3 (Deep Dive Auditor) individual task reports will be named like: `{INDIVIDUAL_DEEP_DIVE_REPORT_PREFIX}_[task_index_or_name].md`
 - Your final aggregated report of all deep dive findings: `{AGGREGATED_DEEP_DIVE_FILENAME_PREFIX}_[timestamp].md`
 
 **Your Tools:**
-- You have `FileTools` to read the `{PLAN_FILENAME}` and to modify it by checking off completed tasks.
+- `FileTools`: To read the `{PLAN_FILENAME}`, modify it by checking off completed tasks, and save the final aggregated report.
+- `UpdateSessionStateTool`: To modify values in the team\'s session_state. Args: `key` (str), `value` (any), `action` (str, optional, e.g., "set", "append", "increment"). Default action is "set".
+- `ReadSessionStateTool`: To read values from the team\'s session_state. Args: `key` (str).
+
+**Session State Variables You Will Manage (accessed via tools):**
+- `audit_plan_items`: A list of dictionaries. Example: `[{{\"raw_task_line\": \"- [ ] Task 1 description\", \"description\": \"Task 1 description\", \"status\": \"pending\"}} , ...]`
+- `current_audit_item_index`: An integer. Initialized to 0.
+- `aggregated_findings`: A string. Initialized to an empty string.
 
 **Workflow:**
 
 **Phase 0: Initial Setup**
-- You will receive an initial user query. This query should be passed to the relevant agents as context.
+- You will receive an initial user query.
+- `session_state` is pre-initialized with `audit_plan_items = []`, `current_audit_item_index = 0`, `aggregated_findings = ""`. You can verify this using `ReadSessionStateTool` if needed.
 
 **Phase 1: Environment Perception**
 1.  Invoke the `{DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_ID}`.
-2.  Its task is to analyze the project (context provided by the user query and its own tools if needed) and produce a `{DEPLOYMENT_REPORT_FILENAME}`.
-3.  Ensure it saves this report to `{SHARED_REPORTS_DIR}/{DEPLOYMENT_REPORT_FILENAME}` using its `save_report_to_repository` tool.
-4.  Confirm the report is saved.
+2.  Its task is to analyze the project and produce `{DEPLOYMENT_REPORT_FILENAME}`.
+3.  Ensure it saves this report to `{SHARED_REPORTS_DIR}/{DEPLOYMENT_REPORT_FILENAME}`.
+4.  Confirm the report is saved. If not, report error and stop.
 
-**Phase 2: Attack Surface Planning**
+**Phase 2: Attack Surface Planning & Plan Ingestion**
 1.  Invoke the `{ATTACK_SURFACE_PLANNING_AGENT_ID}`.
-2.  Its task is to:
-    a. Read the `{DEPLOYMENT_REPORT_FILENAME}` (from `{SHARED_REPORTS_DIR}/{DEPLOYMENT_REPORT_FILENAME}`) using its `read_report_from_repository` tool.
-    b. Consider the original user query.
-    c. Create a detailed, white-box code review plan named `{PLAN_FILENAME}`. This plan **MUST** use Markdown checkboxes for each actionable audit item (e.g., `- [ ] Review authentication logic in xyz.java`).
-    d. Save this plan to `{SHARED_REPORTS_DIR}/{PLAN_FILENAME}` using its `save_report_to_repository` tool.
-3.  Confirm the plan is saved.
+2.  Its task is to read `{DEPLOYMENT_REPORT_FILENAME}`, consider the user query, and create `{PLAN_FILENAME}` with Markdown checkbox tasks.
+3.  Ensure it saves this plan to `{SHARED_REPORTS_DIR}/{PLAN_FILENAME}`.
+4.  Confirm the plan is saved. If not, report error and stop.
+5.  **Plan Ingestion into Session State:**
+    a. Use `FileTools.read_file` to get the content of `{SHARED_REPORTS_DIR}/{PLAN_FILENAME}`.
+    b. Parse the content line by line. For each line starting with `- [ ]`:
+        i.  Extract the full task description.
+        ii. Create a dictionary: `{{\"raw_task_line\": \"ORIGINAL_LINE_TEXT\", \"description\": \"EXTRACTED_DESCRIPTION\", \"status\": \"pending\"}}}}`.
+        iii. **CRITICAL:** Explicitly call `UpdateSessionStateTool` with `key='audit_plan_items'`, `value=THE_DICTIONARY_ABOVE`, `action='append'`. You MUST state the tool call and its parameters clearly.
+    c. After parsing ALL tasks and appending them, **CRITICAL:** Explicitly call `UpdateSessionStateTool` with `key='current_audit_item_index'`, `value=0`, `action='set'`. You MUST state this tool call and its parameters clearly.
+    d. After these updates, verify `audit_plan_items` is populated and `current_audit_item_index` is 0 using `ReadSessionStateTool`. If `audit_plan_items` is empty or `current_audit_item_index` is not 0, report error and stop.
 
-**Phase 3: Iterative Deep-Dive Auditing & Reporting**
-1.  Initialize an empty list or string to accumulate findings for the final aggregated report.
-2.  **Loop Start:**
-    a. Read the content of `{SHARED_REPORTS_DIR}/{PLAN_FILENAME}` using your `FileTools.read_file`.
-    b. Parse this file to find the *first* uncompleted task (i.e., a line starting with `- [ ]`).
-    c. **If no uncompleted tasks are found:** The loop is complete. Proceed to Phase 4.
-    d. **If an uncompleted task is found:**
-        i.  Extract the task description. Let's call this `current_audit_task`.
-        ii. Invoke the `{DEEP_DIVE_SECURITY_AUDITOR_AGENT_ID}`.
-        iii. Provide it with `current_audit_task` as its primary instruction, and also pass along the original user query for broader context.
-        iv. The `{DEEP_DIVE_SECURITY_AUDITOR_AGENT_ID}` will perform its deep dive and produce a Markdown report for this specific task.
-        v.  Collect this report content. Append it to your accumulating list/string for the final aggregated report. (Optionally, you can also save this individual report to `{SHARED_REPORTS_DIR}/{INDIVIDUAL_DEEP_DIVE_REPORT_PREFIX}_[unique_task_identifier].md` for record-keeping, using your `FileTools.edit_file` to create/write it).
-        vi. **Crucially**: Modify the `{SHARED_REPORTS_DIR}/{PLAN_FILENAME}` using `FileTools.edit_file`. Find the line for `current_audit_task` (e.g., `- [ ] The task description`) and change it to be completed (e.g., `- [x] The task description`). Make sure to preserve the rest of the file content. This is critical for tracking progress.
-        vii. Go back to **Loop Start** (step 2a).
+**Phase 3: Iterative Deep-Dive Auditing & Reporting (Using Session State Tools)**
+1.  **Loop Start:**
+    a. Use `ReadSessionStateTool(key='current_audit_item_index')` to get the `current_task_index`.
+    b. Use `ReadSessionStateTool(key='audit_plan_items')` to get the `tasks_list`.
+    c. **Check for Completion:** If `current_task_index` is greater than or equal to `len(tasks_list)`: Proceed to Phase 4. (If `tasks_list` was empty from Phase 2, this condition will also pass, but you should have errored out in Phase 2c).
+    d. **Process Current Task:**
+        i.  Get `current_task_data = tasks_list[current_task_index]`.
+        ii. Extract `task_description = current_task_data['description']` and `raw_task_line = current_task_data['raw_task_line']`.
+        iii. Invoke `{DEEP_DIVE_SECURITY_AUDITOR_AGENT_ID}` with `task_description` and the original user query.
+        iv. Collect the agent's Markdown report.
+        v.  Use `ReadSessionStateTool(key='aggregated_findings')` to get current findings, append the new report (with separator), then use `UpdateSessionStateTool` with `key='aggregated_findings'`, `value=NEW_AGGREGATED_STRING`, `action='set'`.
+        vi. **Mark Task Complete in Plan File:** Use `FileTools.edit_file` to change `raw_task_line` to its completed form in `{SHARED_REPORTS_DIR}/{PLAN_FILENAME}`.
+        vii. **Update Session State for Task Status (CRITICAL - Use Read-Modify-Write):**
+            1. Read the entire `audit_plan_items` list using `ReadSessionStateTool(key='audit_plan_items')`.
+            2. In your internal reasoning (do not show this as a separate step to the user), modify the item at `current_task_index` in the retrieved list to set its `status` to `"completed"`.
+            3. Use `UpdateSessionStateTool` with `key='audit_plan_items'`, `value=THE_ENTIRE_MODIFIED_LIST`, `action='set'` to save the updated list back to session state.
+        viii. **Increment Task Index in Session State:** Use `UpdateSessionStateTool` with `key='current_audit_item_index'`, `value=1`, `action='increment'`.
+        ix. Go back to **Loop Start** (Phase 3, Step 1a).
 
 **Phase 4: Final Aggregation and Output**
-1.  Once all tasks in `{PLAN_FILENAME}` are marked as completed.
-2.  Compile all the collected individual deep-dive reports into a single, comprehensive Markdown document.
-3.  Save this aggregated report as `{SHARED_REPORTS_DIR}/{AGGREGATED_DEEP_DIVE_FILENAME_PREFIX}_[timestamp].md` using `FileTools.edit_file`. (Generate a unique timestamp for the filename).
-4.  Your final output message should indicate the process is complete and point to the location of all generated reports, especially the aggregated one.
+1.  Use `ReadSessionStateTool(key='aggregated_findings')` to get `final_report_content`.
+2.  Generate a timestamp string (e.g., YYYYMMDDHHMMSS). If you cannot, use a fixed name like `AggregatedReport_Latest.md`.
+3.  Construct final report filename: `{SHARED_REPORTS_DIR}/{AGGREGATED_DEEP_DIVE_FILENAME_PREFIX}_[timestamp_or_fixed_name].md`.
+4.  Use `FileTools.edit_file` to save `final_report_content`.
+5.  Output a completion message pointing to reports.
 
-Be methodical. Ensure each step completes successfully before moving to the next. Pay close attention to file paths and tool usage.
-If an agent fails or a step cannot be completed, report the issue clearly.
+Be methodical. If tool calls fail or agents fail, report clearly. Explicitly state the tool calls you are making with their parameters.
+If `UpdateSessionStateTool` for path `audit_plan_items.[current_task_index].status` is problematic, an alternative for step vii is: 1. Read `audit_plan_items`. 2. Modify the specific item in the retrieved list. 3. Use `UpdateSessionStateTool` to set the entire `audit_plan_items` key to this modified list.
 ''')
 
 
 class SecurityAuditTeam:
-    def __init__(self, model_id: str = DEFAULT_MODEL_ID, db_path: str = "team_memory.sqlite"):
+    def __init__(self, model_id: str = DEFAULT_MODEL_ID, team_leader_model_id: Optional[str] = None, db_path: str = "team_memory.sqlite"):
         self.model_id = model_id
+        self.team_leader_model_id = team_leader_model_id if team_leader_model_id else model_id # Use specific or fallback to general
         self.db_path = db_path
         self._setup_team()
 
     def _setup_team(self):
         # Get model instances
-        team_leader_model = get_model_instance(self.model_id)
+        team_leader_model = get_model_instance(self.team_leader_model_id) # Use the new dedicated model_id
         env_reporter_model = get_model_instance(self.model_id)
         planner_model = get_model_instance(self.model_id)
         auditor_model = get_model_instance(self.model_id)
@@ -157,6 +177,8 @@ class SecurityAuditTeam:
 
         # Team Leader (the Team itself) tools
         team_leader_file_tools = FileTools() # Instantiate FileTools
+        update_state_tool = UpdateSessionStateTool() # Instantiate new tool
+        read_state_tool = ReadSessionStateTool()     # Instantiate new tool
         
         # Memory
         if os.path.exists(self.db_path):
@@ -175,9 +197,10 @@ class SecurityAuditTeam:
             model=team_leader_model,
             instructions=TEAM_LEADER_INSTRUCTIONS,
             members=[env_perception_agent, attack_planning_agent, deep_dive_auditor],
-            tools=[team_leader_file_tools], # Pass the FileTools instance
+            tools=[team_leader_file_tools, update_state_tool, read_state_tool], # Add new tools to leader
             mode="coordinate",
             memory=team_main_memory, # Pass the wrapped Memory object
+            session_state={'audit_plan_items': [], 'current_audit_item_index': 0, 'aggregated_findings': ""}, # Initialize session_state
             enable_team_history=True,
             share_member_interactions=False,
             enable_agentic_context=True,
