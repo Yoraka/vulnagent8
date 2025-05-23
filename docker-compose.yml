@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "7777:7777"  # Playground port
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - AGNO_API_KEY=${AGNO_API_KEY}
+      - WAIT_FOR_DB=true
+      - MIGRATE_DB=true
+    volumes:
+      - ./db:/app/db  # Persist SQLite database
+    command: playground  # Run playground instead of chill
+
+  db:
+    image: postgres:15
+    environment:
+      - POSTGRES_USER=${DB_USER:-postgres}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
+      - POSTGRES_DB=${DB_NAME:-vulnagent}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data: 

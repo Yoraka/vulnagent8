@@ -14,17 +14,23 @@ WORKDIR ${APP_DIR}
 COPY requirements.txt ./
 
 # Install requirements
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential libcurl4-openssl-dev && rm -rf /var/lib/apt/lists/*
 RUN uv pip sync requirements.txt --system
 
+# RUN uv pip install agno==1.5.1
 # Copy project files
 COPY . .
 
-# Set permissions for the /app directory
-RUN chown -R ${USER}:${USER} ${APP_DIR} \
+# Create necessary directories
+RUN mkdir -p ${APP_DIR}/db \
+    && chown -R ${USER}:${USER} ${APP_DIR} \
     && chmod +x ${APP_DIR}/scripts/entrypoint.sh
 
 # Switch to non-root user
 USER ${USER}
+
+# Expose ports for both services
+EXPOSE 7777 8501
 
 ENTRYPOINT ["/app/scripts/entrypoint.sh"]
 CMD ["chill"]

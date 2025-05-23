@@ -34,3 +34,7 @@ venv*
 v7_prd.md
 
 aienv/
+
+.local/
+tmp/agents.db
+team_memory.sqlite

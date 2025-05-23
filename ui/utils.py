@@ -30,13 +30,13 @@ async def selected_model() -> str:
         "qwen3-235b-a22b": "qwen/qwen3-235b-a22b",
         "grok-3-mini-beta": "grok-3-beta",
     }
-    selected_model = st.sidebar.selectbox(
+    selected_model_key = st.sidebar.selectbox(
         "Choose a model",
         options=list(model_options.keys()),
         index=0,
         key="model_selector",
     )
-    return model_options[selected_model]
+    return model_options[selected_model_key]
 
 
 async def add_message(
@@ -315,13 +315,25 @@ def export_chat_history(agent_name: str):
     return chat_text
 
 
-async def utilities_widget(agent_name: str, agent: Agent) -> None:
+async def utilities_widget(agent_name: str, agent: Agent, get_agent: Optional[Callable] = None) -> None:
     """Display a utilities widget in the sidebar."""
     st.sidebar.markdown("#### 🛠️ Utilities")
     col1, col2 = st.sidebar.columns(2)
     with col1:
         if st.button("🔄 Start New Chat"):
-            restart_agent(agent_name)
+            if get_agent:
+                # Create new agent and ensure session_id is set
+                new_agent = get_agent(user_id=agent.user_id, model_id=agent.model.id, session_id=None)
+                # Ensure session_id is set before updating state
+                if not new_agent.session_id:
+                    new_agent.load_session()  # This will create a new session if none exists
+                st.session_state[agent_name]["agent"] = new_agent
+                st.session_state[agent_name]["messages"] = []
+                st.session_state[agent_name]["session_id"] = new_agent.session_id
+                st.session_state.editing_message_idx = None
+                st.rerun()
+            else:
+                st.sidebar.warning("Agent factory not provided")
     with col2:
         fn = f"{agent_name}_chat_history.md"
         if "session_id" in st.session_state[agent_name]:
