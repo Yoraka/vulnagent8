@@ -20,9 +20,9 @@ from agno.tools.file import FileTools
 # HARDCODED_WORKSPACE_PATH = "/data/mall_code" 
 
 # This agent's description focuses on its role in the first stage.
-ENVIRONMENT_PERCEPTION_AGENT_ID = "deployment_architecture_reporter_v1"
-ENVIRONMENT_PERCEPTION_AGENT_NAME = "DeploymentArchitectureReporterAgent"
-ENVIRONMENT_PERCEPTION_AGENT_DESCRIPTION = dedent("""\
+DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_ID = "deployment_architecture_reporter_v1"
+DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_NAME = "DeploymentArchitectureReporterAgent"
+DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_DESCRIPTION = dedent("""\
     You are an expert Deployment Architecture Reporter Agent. Your sole responsibility is to meticulously analyze 
     a given Java backend project's configuration files (Docker, Nginx, gateway configs, application properties, etc.) 
     to produce a detailed, purely factual, and verifiable report on its **deployed system architecture**. 
@@ -109,7 +109,7 @@ ENVIRONMENT_PERCEPTION_AGENT_INSTRUCTIONS = dedent("""\
     **Final Action: Save Report to Repository (MANDATORY)**
     1. After completing your entire analysis and formulating the comprehensive and strictly factual Markdown report on the **deployed system architecture** as described in sections 0-IV and the Tool Usage Log, you MUST call the `save_report_to_repository` tool.
     2. Pass your complete, final Markdown report as the `report_content` argument to this tool.
-    3. Use the default `report_name` "environment_analysis_report.md".
+    3. Use the default `report_name` "DeploymentArchitectureReport.md".
     4. This step ensures your factual architectural findings are durably stored.
     """)
 
@@ -124,10 +124,10 @@ class AgentConfig(BaseModel):
     tools: List[Any] # List of tool instances
     model_id: Optional[str] = None # Optional: model can be set in workflow
 
-ENVIRONMENT_PERCEPTION_AGENT = AgentConfig(
-    agent_id=ENVIRONMENT_PERCEPTION_AGENT_ID,
-    name=ENVIRONMENT_PERCEPTION_AGENT_NAME,
-    description=ENVIRONMENT_PERCEPTION_AGENT_DESCRIPTION,
+DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_CONFIG = AgentConfig(
+    agent_id=DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_ID,
+    name=DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_NAME,
+    description=DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_DESCRIPTION,
     instructions=ENVIRONMENT_PERCEPTION_AGENT_INSTRUCTIONS,
     tools=[shell_tools, file_tools], 
     # model_id can be set here if desired, e.g., model_id="grok-3-beta" 
@@ -151,19 +151,19 @@ async def main_standalone_epa():
             f.write("version: '3.8'\nservices:\n  nginx:\n    image: nginx:latest\n    ports:\n      - \"80:80\"\n      - \"443:443\"\n    volumes:\n      - ./nginx_config:/etc/nginx/conf.d\n  user-service:\n    image: myapp/user-service:1.0\n    expose:\n      - \"8080\"\n  product-service:\n    image: myapp/product-service:1.0\n    expose:\n      - \"8081\"\n")
         print(f"Created dummy deployment project at: {HARDCODED_WORKSPACE_PATH}")
 
-    print(f"Agent ID: {ENVIRONMENT_PERCEPTION_AGENT.agent_id}")
-    print(f"Agent Name: {ENVIRONMENT_PERCEPTION_AGENT.name}")
-    print(f"Agent Description:\n{ENVIRONMENT_PERCEPTION_AGENT.description}")
-    print(f"Agent Instructions Preview (first 1000 chars):\n{ENVIRONMENT_PERCEPTION_AGENT.instructions[:1000]}...")
-    print(f"Agent Tools (initially): {ENVIRONMENT_PERCEPTION_AGENT.tools}")
+    print(f"Agent ID: {DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_CONFIG.agent_id}")
+    print(f"Agent Name: {DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_CONFIG.name}")
+    print(f"Agent Description:\n{DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_CONFIG.description}")
+    print(f"Agent Instructions Preview (first 1000 chars):\n{DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_CONFIG.instructions[:1000]}...")
+    print(f"Agent Tools (initially): {DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_CONFIG.tools}")
     
     # Actual run would require async setup and full agent instantiation with model and all tools.
     # from core.model_factory import get_model_instance
     # from tools.report_repository_tools import save_report_to_repository
     # model_instance = get_model_instance("grok-3-beta") # or your preferred model
-    # all_tools = ENVIRONMENT_PERCEPTION_AGENT.tools + [save_report_to_repository]
+    # all_tools = DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_CONFIG.tools + [save_report_to_repository]
     # epa = Agent(
-    #     **ENVIRONMENT_PERCEPTION_AGENT.model_dump(exclude_none=True),
+    #     **DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_CONFIG.model_dump(exclude_none=True),
     #     model=model_instance,
     #     tools=all_tools, # Manually add the save tool for this test context
     #     enable_user_memories=False 
