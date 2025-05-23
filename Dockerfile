@@ -19,12 +19,16 @@ RUN uv pip sync requirements.txt --system
 # Copy project files
 COPY . .
 
-# Set permissions for the /app directory
-RUN chown -R ${USER}:${USER} ${APP_DIR} \
+# Create necessary directories
+RUN mkdir -p ${APP_DIR}/db \
+    && chown -R ${USER}:${USER} ${APP_DIR} \
     && chmod +x ${APP_DIR}/scripts/entrypoint.sh
 
 # Switch to non-root user
 USER ${USER}
+
+# Expose ports for both services
+EXPOSE 7777 8501
 
 ENTRYPOINT ["/app/scripts/entrypoint.sh"]
 CMD ["chill"]

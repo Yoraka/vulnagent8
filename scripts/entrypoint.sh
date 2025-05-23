@@ -44,11 +44,20 @@ fi
 case "$1" in
   chill)
     ;;
+  start)
+    echo "Starting Streamlit and Playground services..."
+    # Start Streamlit in the background
+    streamlit run ui/pages/3_LocalToolTester.py --server.port 8501 --server.address 0.0.0.0 &
+    # Start Playground
+    python playground.py
+    ;;
   *)
     echo "Running: $@"
     exec "$@"
     ;;
 esac
 
-echo ">>> Hello World!"
-while true; do sleep 18000; done
+if [[ "$1" = "chill" ]]; then
+  echo ">>> Hello World!"
+  while true; do sleep 18000; done
+fi
