@@ -10,7 +10,7 @@ from agno.media import Image
 # Import the utility function from its new location
 from core.model_factory import get_model_instance 
 
-from agents.environment_perception_agent import ENVIRONMENT_PERCEPTION_AGENT
+from agents.environment_perception_agent import DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_CONFIG
 # MODIFIED: Import the new AttackSurfacePlanningAgentForWhiteBox config
 from agents.attack_surface_identification_agent import ATTACK_SURFACE_PLANNING_AGENT_CONFIG # This should now refer to the _v2_whitebox config
 
@@ -61,14 +61,14 @@ class SecurityAuditWorkflow(Workflow):
         env_model_instance = get_model_instance(env_model_id_str)
         
         # Combine existing tools with the new save_report_to_repository tool
-        env_perception_tools = list(ENVIRONMENT_PERCEPTION_AGENT.tools) # Create a mutable copy
+        env_perception_tools = list(DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_CONFIG.tools) # Create a mutable copy
         env_perception_tools.append(save_report_to_repository)
 
         self.env_perception_agent = Agent(
-            agent_id=ENVIRONMENT_PERCEPTION_AGENT.agent_id,
-            name=ENVIRONMENT_PERCEPTION_AGENT.name,
-            description=ENVIRONMENT_PERCEPTION_AGENT.description,
-            instructions=ENVIRONMENT_PERCEPTION_AGENT.instructions,
+            agent_id=DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_CONFIG.agent_id,
+            name=DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_CONFIG.name,
+            description=DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_CONFIG.description,
+            instructions=DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_CONFIG.instructions,
             tools=env_perception_tools, # MODIFIED: Added repository tool
             model=env_model_instance, 
             # memory=self.shared_memory, 

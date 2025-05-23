@@ -14,6 +14,7 @@ WORKDIR ${APP_DIR}
 COPY requirements.txt ./
 
 # Install requirements
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential libcurl4-openssl-dev && rm -rf /var/lib/apt/lists/*
 RUN uv pip sync requirements.txt --system
 
 # RUN uv pip install agno==1.5.1
