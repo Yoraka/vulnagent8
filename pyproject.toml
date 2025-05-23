@@ -22,6 +22,7 @@ dependencies = [
   "streamlit",
   "tiktoken",
   "typer",
+  "yfinance"
 ]
 
 [project.optional-dependencies]
