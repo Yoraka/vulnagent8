@@ -129,16 +129,14 @@ If `UpdateSessionStateTool` for path `audit_plan_items.[current_task_index].stat
 ''')
 
 
-class SecurityAuditTeam:
+class SecurityAuditTeam(Team):
     def __init__(self, model_id: str = DEFAULT_MODEL_ID, team_leader_model_id: Optional[str] = None, db_path: str = "team_memory.sqlite"):
         self.model_id = model_id
-        self.team_leader_model_id = team_leader_model_id if team_leader_model_id else model_id # Use specific or fallback to general
+        self.team_leader_model_id = team_leader_model_id if team_leader_model_id else model_id
         self.db_path = db_path
-        self._setup_team()
-
-    def _setup_team(self):
+        
         # Get model instances
-        team_leader_model = get_model_instance(self.team_leader_model_id) # Use the new dedicated model_id
+        team_leader_model = get_model_instance(self.team_leader_model_id)
         env_reporter_model = get_model_instance(self.model_id)
         planner_model = get_model_instance(self.model_id)
         auditor_model = get_model_instance(self.model_id)
@@ -171,44 +169,38 @@ class SecurityAuditTeam:
             tools=[auditor_file_tools, auditor_shell_tools, read_report_from_repository],
             model=auditor_model,
         )
-        # Ensure FileTools and ShellTools are available to the agent.
-        # The AgentConfig already lists FileTools and ShellTools as classes.
-        # Agno should instantiate them. If not, we might need to pass instances.
 
-        # Team Leader (the Team itself) tools
-        team_leader_file_tools = FileTools() # Instantiate FileTools
-        update_state_tool = UpdateSessionStateTool() # Instantiate new tool
-        read_state_tool = ReadSessionStateTool()     # Instantiate new tool
+        # Team Leader tools
+        team_leader_file_tools = FileTools()
+        update_state_tool = UpdateSessionStateTool()
+        read_state_tool = ReadSessionStateTool()
         
-        # Memory
+        # Memory setup
         if os.path.exists(self.db_path):
-            os.remove(self.db_path) # Clean slate for demo purposes
+            os.remove(self.db_path)  # Clean slate for demo purposes
         
-        # Create the SQLite database backend
         sqlite_db_backend = SqliteMemoryDb(db_file=self.db_path, table_name="team_memory_table")
-        # Create the main Memory object, wrapping the SQLite backend
         team_main_memory = Memory(db=sqlite_db_backend)
 
-
-        self.team = Team(
+        # Initialize the parent Team class
+        super().__init__(
             team_id=SECURITY_AUDIT_TEAM_ID,
             name=SECURITY_AUDIT_TEAM_NAME,
             description=SECURITY_AUDIT_TEAM_DESCRIPTION,
             model=team_leader_model,
             instructions=TEAM_LEADER_INSTRUCTIONS,
             members=[env_perception_agent, attack_planning_agent, deep_dive_auditor],
-            tools=[team_leader_file_tools, update_state_tool, read_state_tool], # Add new tools to leader
+            tools=[team_leader_file_tools, update_state_tool, read_state_tool],
             mode="coordinate",
-            memory=team_main_memory, # Pass the wrapped Memory object
-            session_state={'audit_plan_items': [], 'current_audit_item_index': 0, 'aggregated_findings': ""}, # Initialize session_state
+            memory=team_main_memory,
+            session_state={'audit_plan_items': [], 'current_audit_item_index': 0, 'aggregated_findings': ""},
             enable_team_history=True,
             share_member_interactions=False,
             enable_agentic_context=True,
-            markdown=True,  # Assuming markdown is desired for outputs
+            markdown=True,
             debug_mode=True,
             show_tool_calls=True,
             show_members_responses=True,
-            # enable_user_memories=True, # Might be redundant if team_history & member_context are on
         )
 
     async def stream_team_audit(
@@ -228,23 +220,12 @@ class SecurityAuditTeam:
         print(f"Reports will be saved in: {SHARED_REPORTS_DIR}")
         os.makedirs(SHARED_REPORTS_DIR, exist_ok=True)
 
-        # Clear previous reports for a clean run (optional, for demo)
-        # for f_name in [DEPLOYMENT_REPORT_FILENAME, PLAN_FILENAME]:
-        #     f_path = os.path.join(SHARED_REPORTS_DIR, f_name)
-        #     if os.path.exists(f_path):
-        #         os.remove(f_path)
-        # for f_name in os.listdir(SHARED_REPORTS_DIR):
-        #     if f_name.startswith(AGGREGATED_DEEP_DIVE_FILENAME_PREFIX) or f_name.startswith(INDIVIDUAL_DEEP_DIVE_REPORT_PREFIX):
-        #         os.remove(os.path.join(SHARED_REPORTS_DIR, f_name))
-
-
-        async for response_chunk in await self.team.arun(
+        async for response_chunk in await self.arun(
             message=initial_user_query,
             run_id=run_id,
             session_id=session_id,
             images=images,
             stream=True,
-            # stream_tool_calls=True # To see tool calls from the leader/members
         ):
             yield response_chunk
         print(f"Team Audit Run ID {run_id} completed.")

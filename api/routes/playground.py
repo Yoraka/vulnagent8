@@ -9,6 +9,7 @@ from fastapi import APIRouter
 
 from agents.sage import get_sage
 from agents.scholar import get_scholar
+from workflows.security_audit_team import SecurityAuditTeam
 
 agent_storage: str = "tmp/agents.db"
 
@@ -44,11 +45,12 @@ finance_agent = Agent(
 # Get Sage and Scholar agent instances
 sage_agent = get_sage()
 scholar_agent = get_scholar()
+audit_team = SecurityAuditTeam(model_id="openrouter/google/gemini-2.5-flash-preview-05-20")
 
 playground_router = APIRouter(prefix="/playground", tags=["Playground"])
 
 # Instantiate Playground
-playground_instance = Playground(agents=[web_agent, finance_agent, sage_agent, scholar_agent])
+playground_instance = Playground(agents=[web_agent, finance_agent, sage_agent, scholar_agent], teams=[audit_team])
 
 app = playground_instance.get_app()
 
