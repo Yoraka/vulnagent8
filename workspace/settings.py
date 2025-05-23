@@ -19,11 +19,11 @@ ws_settings = WorkspaceSettings(
     default_env="dev",
     # -*- Image Settings
     # Repository for images
-    image_repo="agnohq",
+    image_repo="local",
     # 'Name:tag' for the image
     image_name="agent-app",
     # Build images locally
-    build_images=False,
+    build_images=True,
     # Push images to the registry
     push_images=False,
     # Skip cache when building images
