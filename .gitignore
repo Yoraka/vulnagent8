@@ -38,3 +38,6 @@ aienv/
 .local/
 tmp/agents.db
 team_memory.sqlite
+*.db
+*.sqlite
+*.sqlite3

@@ -2,7 +2,8 @@ import asyncio
 import os
 import uuid
 from textwrap import dedent
-from typing import AsyncIterator, List, Optional, Dict, Any
+from typing import AsyncIterator, List, Optional, Dict, Any, Iterator
+from pathlib import Path
 
 from agno.agent import Agent
 from agno.run.response import RunResponse
@@ -12,6 +13,7 @@ from agno.team import Team
 from agno.tools.file import FileTools
 from agno.tools.shell import ShellTools
 from agno.media import Image
+from agno.storage.sqlite import SqliteStorage
 
 from core.model_factory import get_model_instance, DEFAULT_MODEL_ID
 from agents.environment_perception_agent import (
@@ -31,7 +33,10 @@ from tools.report_repository_tools import (
     read_report_from_repository,
     SHARED_REPORTS_DIR
 )
-from tools.session_state_tools import UpdateSessionStateTool, ReadSessionStateTool
+from tools.session_state_tools import ReadSessionStateTool, UpdateSessionStateTool
+from agno.tools import Function
+
+from .team_hooks import log_before_team_tool_call, log_after_team_tool_call
 
 # --- Report Filenames Constants ---
 DEPLOYMENT_REPORT_FILENAME = "DeploymentArchitectureReport.md"
@@ -48,160 +53,252 @@ SECURITY_AUDIT_TEAM_DESCRIPTION = dedent((
 ))
 
 # --- Team Leader (Team itself) Instructions ---
-# This will be the most complex part and will be refined.
-TEAM_LEADER_INSTRUCTIONS = dedent(f'''\
+# Use unique placeholders like <<VARIABLE_NAME>> to avoid conflicts with JSON-like structures.
+TEAM_LEADER_INSTRUCTIONS_TEMPLATE = dedent('''\
+IMPORTANT: Your primary language for all outputs, internal reasoning, and communication to the user is CHINESE (中文).
+
 You are the Team Leader of the Security Audit Team. Your goal is to orchestrate a three-stage security audit of a software project based on an initial user query. You will use `session_state` to manage the list of audit tasks and track progress, interacting with it VIA DEDICATED TOOLS.
 
 **Project Shared Directory:**
-All reports are saved and read from: `{SHARED_REPORTS_DIR}`.
+All reports are saved and read from: <<SHARED_REPORTS_DIR>>.
 Ensure all agents use this path correctly.
 
 **Report Filenames:**
-- Stage 1 (Environment Reporter) output: `{DEPLOYMENT_REPORT_FILENAME}`
-- Stage 2 (Attack Planner) output: `{PLAN_FILENAME}` (This plan will contain Markdown checkboxes for tasks: `- [ ] Task Description`)
-- Stage 3 (Deep Dive Auditor) individual task reports will be named like: `{INDIVIDUAL_DEEP_DIVE_REPORT_PREFIX}_[task_index_or_name].md`
-- Your final aggregated report of all deep dive findings: `{AGGREGATED_DEEP_DIVE_FILENAME_PREFIX}_[timestamp].md`
+- Stage 1 (Environment Reporter) output: <<DEPLOYMENT_REPORT_FILENAME>>
+- Stage 2 (Attack Planner) output: <<PLAN_FILENAME>> (This plan will contain Markdown checkboxes for tasks: `- [ ] Task Description`)
+- Stage 3 (Deep Dive Auditor) individual task reports will be named like: <<INDIVIDUAL_DEEP_DIVE_REPORT_PREFIX>>_[task_index_or_name].md
+- Your final aggregated report of all deep dive findings: <<AGGREGATED_DEEP_DIVE_FILENAME_PREFIX>>_[timestamp].md
 
 **Your Tools:**
-- `FileTools`: To read the `{PLAN_FILENAME}`, modify it by checking off completed tasks, and save the final aggregated report.
-- `UpdateSessionStateTool`: To modify values in the team\'s session_state. Args: `key` (str), `value` (any), `action` (str, optional, e.g., "set", "append", "increment"). Default action is "set".
-- `ReadSessionStateTool`: To read values from the team\'s session_state. Args: `key` (str).
+- `atransfer_task_to_member`: To delegate tasks to member agents. Arguments: `member_id` (str), `task_description` (str), `expected_output` (str, optional).
+- `FileTools` (e.g., `FileTools.read_file`, `FileTools.edit_file`). For `FileTools.edit_file`, arguments include `target_file` (str), `code_edit` (str), `instructions` (str). For `FileTools.read_file`, arguments include `target_file` (str).
+- `ReadSessionStateTool`: To read from `session_state`. Args: `key` (str).
+- `UpdateSessionStateTool`: To modify `session_state`. Args: `key` (str), `value` (any), `action` (str, optional: 'set', 'append', 'increment'). Default action is 'set'.
+- `save_report_to_repository`: To save report content.
+- `read_report_from_repository`: To read report content.
 
-**Session State Variables You Will Manage (accessed via tools):**
-- `audit_plan_items`: A list of dictionaries. Example: `[{{\"raw_task_line\": \"- [ ] Task 1 description\", \"description\": \"Task 1 description\", \"status\": \"pending\"}} , ...]`
+
+**Session State Variables You Will Manage (accessed via ReadSessionStateTool and UpdateSessionStateTool):**
+- `audit_plan_items`: A list of dictionaries. Example: `[{{\"raw_task_line\": \"- [ ] Task 1 description\", \"description\": \"Task 1 description\", \"status\": \"pending\"}}]`
 - `current_audit_item_index`: An integer. Initialized to 0.
-- `aggregated_findings`: A string. Initialized to an empty string.
+- `individual_report_files`: A list of strings (filenames). Initialized to an empty list.
 
 **Workflow:**
 
 **Phase 0: Initial Setup**
 - You will receive an initial user query.
-- `session_state` is pre-initialized with `audit_plan_items = []`, `current_audit_item_index = 0`, `aggregated_findings = ""`. You can verify this using `ReadSessionStateTool` if needed.
+- `session_state` is pre-initialized with `audit_plan_items = []`, `current_audit_item_index = 0`, `individual_report_files = []`. You can verify this using `ReadSessionStateTool` if needed.
 
 **Phase 1: Environment Perception**
-1.  Invoke the `{DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_ID}`.
-2.  Its task is to analyze the project and produce `{DEPLOYMENT_REPORT_FILENAME}`.
-3.  Ensure it saves this report to `{SHARED_REPORTS_DIR}/{DEPLOYMENT_REPORT_FILENAME}`.
-4.  Confirm the report is saved. If not, report error and stop.
+1.  Invoke the `deployment_architecture_reporter_v1` (this is the exact `member_id` for the DeploymentArchitectureReporterAgent) using the `atransfer_task_to_member` tool.
+2.  Its task is to analyze the project and produce a report. Instruct it that its final output artifact should be the content of the report, which it will save using the `save_report_to_repository` tool with the `report_name` `<<DEPLOYMENT_REPORT_FILENAME>>`.
+3.  The `save_report_to_repository` tool will automatically place this file at `<<SHARED_REPORTS_DIR>>/<<DEPLOYMENT_REPORT_FILENAME>>`. You will verify its existence there.
+4.  Confirm the report is saved at the correct location. If not, report error and stop.
 
 **Phase 2: Attack Surface Planning & Plan Ingestion**
-1.  Invoke the `{ATTACK_SURFACE_PLANNING_AGENT_ID}`.
-2.  Its task is to read `{DEPLOYMENT_REPORT_FILENAME}`, consider the user query, and create `{PLAN_FILENAME}` with Markdown checkbox tasks.
-3.  Ensure it saves this plan to `{SHARED_REPORTS_DIR}/{PLAN_FILENAME}`.
-4.  Confirm the plan is saved. If not, report error and stop.
+1.  Invoke the `<<ATTACK_SURFACE_PLANNING_AGENT_ID>>` using `atransfer_task_to_member`.
+2.  Its task is to read `<<DEPLOYMENT_REPORT_FILENAME>>`, consider the user query, and create an attack surface investigation plan. Instruct it explicitly that its final output artifact should be the content of this plan, which it **MUST** save using the `save_report_to_repository` tool with the exact `report_name` `<<PLAN_FILENAME>>`.
+3.  The `save_report_to_repository` tool will automatically place this file at `<<SHARED_REPORTS_DIR>>/<<PLAN_FILENAME>>`. You will verify its existence there.
+4.  Confirm the plan is saved at the correct location with the correct name. If not, report error and stop.
 5.  **Plan Ingestion into Session State:**
-    a. Use `FileTools.read_file` to get the content of `{SHARED_REPORTS_DIR}/{PLAN_FILENAME}`.
-    b. Parse the content line by line. For each line starting with `- [ ]`:
-        i.  Extract the full task description.
-        ii. Create a dictionary: `{{\"raw_task_line\": \"ORIGINAL_LINE_TEXT\", \"description\": \"EXTRACTED_DESCRIPTION\", \"status\": \"pending\"}}}}`.
-        iii. **CRITICAL:** Explicitly call `UpdateSessionStateTool` with `key='audit_plan_items'`, `value=THE_DICTIONARY_ABOVE`, `action='append'`. You MUST state the tool call and its parameters clearly.
-    c. After parsing ALL tasks and appending them, **CRITICAL:** Explicitly call `UpdateSessionStateTool` with `key='current_audit_item_index'`, `value=0`, `action='set'`. You MUST state this tool call and its parameters clearly.
-    d. After these updates, verify `audit_plan_items` is populated and `current_audit_item_index` is 0 using `ReadSessionStateTool`. If `audit_plan_items` is empty or `current_audit_item_index` is not 0, report error and stop.
+    a. Use `read_report_from_repository` (or `FileTools.read_file`) to get the content of `<<SHARED_REPORTS_DIR>>/<<PLAN_FILENAME>>`.
+    b. **Parse All Tasks:** Create an empty list in your internal reasoning (e.g., name it `parsed_task_list`). Iterate through the file content line by line. For each line starting with `- [ ]`:
+        i.  Extract the full task description (the text after `- [ ] `).
+        ii. Create a dictionary object: `{{\"raw_task_line\": \"ORIGINAL_LINE_TEXT_OF_THE_TASK\", \"description\": \"EXTRACTED_DESCRIPTION\", \"status\": \"pending\"}}`.
+        iii. Add this dictionary object to your internal `parsed_task_list`.
+    c. **Update Session State (Two Tool Calls Total for this sub-phase):**
+        i. **CRITICAL STEP 1 (Set all tasks):** After iterating through all lines and fully populating your internal `parsed_task_list`, you **MUST ACTUALLY EXECUTE** one call to `UpdateSessionStateTool` by generating its required JSON tool call structure. Verbally stating the call or its parameters is not enough; you must output the tool call structure for execution by the system. The parameters for this tool call are: `key='audit_plan_items'`, `value=THE_ENTIRE_PARSED_TASK_LIST_YOU_BUILT`, `action='set'`.
+        ii. **CRITICAL STEP 2 (Set index):** Immediately after successfully completing the previous tool call, you **MUST ACTUALLY EXECUTE** another call to `UpdateSessionStateTool` by generating its JSON tool call structure. Again, you must output the tool call structure for execution. The parameters for this tool call are: `key='current_audit_item_index'`, `value=0`, `action='set'`.
+    d. After these two tool calls, verify `audit_plan_items` is populated and `current_audit_item_index` is 0 using `ReadSessionStateTool`. If not, report an error and stop.
 
 **Phase 3: Iterative Deep-Dive Auditing & Reporting (Using Session State Tools)**
 1.  **Loop Start:**
-    a. Use `ReadSessionStateTool(key='current_audit_item_index')` to get the `current_task_index`.
-    b. Use `ReadSessionStateTool(key='audit_plan_items')` to get the `tasks_list`.
-    c. **Check for Completion:** If `current_task_index` is greater than or equal to `len(tasks_list)`: Proceed to Phase 4. (If `tasks_list` was empty from Phase 2, this condition will also pass, but you should have errored out in Phase 2c).
+    a. Call `ReadSessionStateTool`, args: `key='current_audit_item_index'`.
+    b. Call `ReadSessionStateTool`, args: `key='audit_plan_items'`.
+    c. **Check for Completion:** If `current_task_index >= len(tasks_list)`: Proceed to Phase 4.
     d. **Process Current Task:**
         i.  Get `current_task_data = tasks_list[current_task_index]`.
         ii. Extract `task_description = current_task_data['description']` and `raw_task_line = current_task_data['raw_task_line']`.
-        iii. Invoke `{DEEP_DIVE_SECURITY_AUDITOR_AGENT_ID}` with `task_description` and the original user query.
-        iv. Collect the agent's Markdown report.
-        v.  Use `ReadSessionStateTool(key='aggregated_findings')` to get current findings, append the new report (with separator), then use `UpdateSessionStateTool` with `key='aggregated_findings'`, `value=NEW_AGGREGATED_STRING`, `action='set'`.
-        vi. **Mark Task Complete in Plan File:** Use `FileTools.edit_file` to change `raw_task_line` to its completed form in `{SHARED_REPORTS_DIR}/{PLAN_FILENAME}`.
-        vii. **Update Session State for Task Status (CRITICAL - Use Read-Modify-Write):**
-            1. Read the entire `audit_plan_items` list using `ReadSessionStateTool(key='audit_plan_items')`.
-            2. In your internal reasoning (do not show this as a separate step to the user), modify the item at `current_task_index` in the retrieved list to set its `status` to `"completed"`.
-            3. Use `UpdateSessionStateTool` with `key='audit_plan_items'`, `value=THE_ENTIRE_MODIFIED_LIST`, `action='set'` to save the updated list back to session state.
-        viii. **Increment Task Index in Session State:** Use `UpdateSessionStateTool` with `key='current_audit_item_index'`, `value=1`, `action='increment'`.
-        ix. Go back to **Loop Start** (Phase 3, Step 1a).
+        iii. Invoke `<<DEEP_DIVE_SECURITY_AUDITOR_AGENT_ID>>` via `atransfer_task_to_member` with `task_description` and original user query. It returns the FILENAME.
+        iv. Let this be `new_report_filename`.
+        v. Call `UpdateSessionStateTool`, args: `key='individual_report_files'`, `value=new_report_filename`, `action='append'`.
+        vi. **Mark Task Complete in Plan File:** Use `FileTools.edit_file` to change `raw_task_line` in `<<SHARED_REPORTS_DIR>>/<<PLAN_FILENAME>>`. (Replace the `- [ ]` with `- [x]`).
+        vii. **Update Session State for Task Status:** Read `audit_plan_items` (using `ReadSessionStateTool`), modify item at `current_task_index` to set `status=\"completed\"`, then call `UpdateSessionStateTool` with `key='audit_plan_items'`, `value=THE_MODIFIED_LIST`, `action='set'`.
+        viii. **Increment Task Index:** Call `UpdateSessionStateTool`, args: `key='current_audit_item_index'`, `value=1`, `action='increment'`.
+        ix. Go back to **Loop Start**.
 
 **Phase 4: Final Aggregation and Output**
-1.  Use `ReadSessionStateTool(key='aggregated_findings')` to get `final_report_content`.
-2.  Generate a timestamp string (e.g., YYYYMMDDHHMMSS). If you cannot, use a fixed name like `AggregatedReport_Latest.md`.
-3.  Construct final report filename: `{SHARED_REPORTS_DIR}/{AGGREGATED_DEEP_DIVE_FILENAME_PREFIX}_[timestamp_or_fixed_name].md`.
-4.  Use `FileTools.edit_file` to save `final_report_content`.
-5.  Output a completion message pointing to reports.
+1.  Call `ReadSessionStateTool`, args: `key='individual_report_files'`.
+2.  Initialize `final_report_content = \"\"`.
+3.  For each `report_filename`:
+    a. Construct full path: `<<SHARED_REPORTS_DIR>>/{{report_filename}}`. (Note: {{report_filename}} is a loop variable here, not a template placeholder)
+    b. Use `read_report_from_repository` (or `FileTools.read_file`) to read content.
+    c. Append to `final_report_content`.
+4.  Generate timestamp string.
+5.  Construct final report filename: `<<SHARED_REPORTS_DIR>>/<<AGGREGATED_DEEP_DIVE_FILENAME_PREFIX>>_[timestamp].md`.
+6.  Use `save_report_to_repository` (or `FileTools.edit_file`) to save `final_report_content`.
+7.  Output completion message.
 
 Be methodical. If tool calls fail or agents fail, report clearly. Explicitly state the tool calls you are making with their parameters.
-If `UpdateSessionStateTool` for path `audit_plan_items.[current_task_index].status` is problematic, an alternative for step vii is: 1. Read `audit_plan_items`. 2. Modify the specific item in the retrieved list. 3. Use `UpdateSessionStateTool` to set the entire `audit_plan_items` key to this modified list.
 ''')
 
 
 class SecurityAuditTeam(Team):
-    def __init__(self, model_id: str = DEFAULT_MODEL_ID, team_leader_model_id: Optional[str] = None, db_path: str = "team_memory.sqlite"):
+    def __init__(
+        self,
+        user_id: Optional[str] = "default_user",
+        team_id: str = "security_audit_team_v1",
+        model_id: str = DEFAULT_MODEL_ID,
+        team_leader_model_id: str = DEFAULT_MODEL_ID,
+        env_reporter_model_id: str = DEFAULT_MODEL_ID,
+        attack_planning_model_id: str = DEFAULT_MODEL_ID,
+        deep_dive_auditor_model_id: str = DEFAULT_MODEL_ID,
+        name: str = "SecurityAuditTeam",
+        initial_audit_plan_items: Optional[List[Dict[str, Any]]] = None,
+        initial_current_audit_item_index: int = 0,
+        initial_individual_report_files: Optional[List[str]] = None,
+        db_path: str = "security_audit_team_memory.db",
+        **kwargs: Any,
+    ):
         self.model_id = model_id
-        self.team_leader_model_id = team_leader_model_id if team_leader_model_id else model_id
+        self.team_leader_model_id = team_leader_model_id
+        self.env_reporter_model_id = env_reporter_model_id
+        self.attack_planning_model_id = attack_planning_model_id
+        self.deep_dive_auditor_model_id = deep_dive_auditor_model_id
         self.db_path = db_path
+        self.user_id = user_id if user_id else f"team_user_{uuid.uuid4()}"
         
         # Get model instances
         team_leader_model = get_model_instance(self.team_leader_model_id)
-        env_reporter_model = get_model_instance(self.model_id)
-        planner_model = get_model_instance(self.model_id)
-        auditor_model = get_model_instance(self.model_id)
-
-        # 1. Environment Reporter Agent
-        env_perception_agent = Agent(
-            name=DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_CONFIG.name,
-            description=DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_CONFIG.description,
-            instructions=DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_CONFIG.instructions,
-            tools=DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_CONFIG.tools + [save_report_to_repository],
-            model=env_reporter_model,
-        )
-
-        # 2. Attack Surface Planning Agent
-        attack_planning_agent = Agent(
-            name=ATTACK_SURFACE_PLANNING_AGENT_CONFIG.name,
-            description=ATTACK_SURFACE_PLANNING_AGENT_CONFIG.description,
-            instructions=ATTACK_SURFACE_PLANNING_AGENT_CONFIG.instructions,
-            tools=ATTACK_SURFACE_PLANNING_AGENT_CONFIG.tools + [read_report_from_repository, save_report_to_repository],
-            model=planner_model,
-        )
-
-        # 3. Deep Dive Security Auditor Agent
-        auditor_file_tools = FileTools()
-        auditor_shell_tools = ShellTools()
-        deep_dive_auditor = Agent(
-            name=DEEP_DIVE_SECURITY_AUDITOR_AGENT_CONFIG.name,
-            description=DEEP_DIVE_SECURITY_AUDITOR_AGENT_CONFIG.description,
-            instructions=DEEP_DIVE_SECURITY_AUDITOR_AGENT_CONFIG.instructions_template,
-            tools=[auditor_file_tools, auditor_shell_tools, read_report_from_repository],
-            model=auditor_model,
-        )
-
-        # Team Leader tools
-        team_leader_file_tools = FileTools()
-        update_state_tool = UpdateSessionStateTool()
-        read_state_tool = ReadSessionStateTool()
-        
-        # Memory setup
-        if os.path.exists(self.db_path):
-            os.remove(self.db_path)  # Clean slate for demo purposes
+        env_reporter_model = get_model_instance(self.env_reporter_model_id)
+        attack_planning_model = get_model_instance(self.attack_planning_model_id)
+        deep_dive_auditor_model = get_model_instance(self.deep_dive_auditor_model_id)
         
         sqlite_db_backend = SqliteMemoryDb(db_file=self.db_path, table_name="team_memory_table")
         team_main_memory = Memory(db=sqlite_db_backend)
 
-        # Initialize the parent Team class
+        team_chat_storage = SqliteStorage(
+            table_name="team_chat_history", 
+            db_file=self.db_path,
+            auto_upgrade_schema=True
+        )
+
+        reporter_file_tools = FileTools(base_dir=Path("/data/mall_code"))
+        reporter_shell_tools = ShellTools()
+        auditor_file_tools = FileTools(base_dir=Path("/data/mall_code"))
+        auditor_shell_tools = ShellTools()
+
+        # session_state_toolkit = SessionStateManagementTools()
+
+        team_tools = [
+            reporter_file_tools,
+            reporter_shell_tools,
+            auditor_file_tools,
+            auditor_shell_tools,
+            # session_state_toolkit,
+            save_report_to_repository,
+            read_report_from_repository
+        ]
+        
+        # Instantiate and wrap session state tools for the Team Leader
+        update_tool_instance = UpdateSessionStateTool()
+        read_tool_instance = ReadSessionStateTool()
+
+        update_session_state_tool_func = Function.from_callable(update_tool_instance.__call__)
+        update_session_state_tool_func.name = update_tool_instance.name
+        update_session_state_tool_func.description = update_tool_instance.description
+
+        read_session_state_tool_func = Function.from_callable(read_tool_instance.__call__)
+        read_session_state_tool_func.name = read_tool_instance.name
+        read_session_state_tool_func.description = read_tool_instance.description
+        
+        team_tools.extend([
+            update_session_state_tool_func,
+            read_session_state_tool_func
+        ])
+        
+        current_session_state = {
+            'audit_plan_items': initial_audit_plan_items or [],
+            'current_audit_item_index': initial_current_audit_item_index or 0,
+            'individual_report_files': initial_individual_report_files or []
+        }
+
+        env_perception_agent = Agent(
+            agent_id=DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_ID,
+            name=DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_CONFIG.name,
+            description=DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_CONFIG.description,
+            instructions=DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_CONFIG.instructions,
+            tools=[reporter_file_tools, reporter_shell_tools, save_report_to_repository],
+            model=env_reporter_model,
+            monitoring=True,
+            memory=team_main_memory,
+            enable_user_memories=False,
+        )
+
+        attack_planning_agent = Agent(
+            agent_id=ATTACK_SURFACE_PLANNING_AGENT_ID,
+            name=ATTACK_SURFACE_PLANNING_AGENT_CONFIG.name,
+            description=ATTACK_SURFACE_PLANNING_AGENT_CONFIG.description,
+            instructions=ATTACK_SURFACE_PLANNING_AGENT_CONFIG.instructions,
+            tools=ATTACK_SURFACE_PLANNING_AGENT_CONFIG.tools + [read_report_from_repository, save_report_to_repository],
+            model=attack_planning_model,
+            monitoring=True,
+            memory=team_main_memory,
+            enable_user_memories=False,
+        )
+
+        deep_dive_auditor = Agent(
+            agent_id=DEEP_DIVE_SECURITY_AUDITOR_AGENT_ID,
+            name=DEEP_DIVE_SECURITY_AUDITOR_AGENT_CONFIG.name,
+            description=DEEP_DIVE_SECURITY_AUDITOR_AGENT_CONFIG.description,
+            instructions=DEEP_DIVE_SECURITY_AUDITOR_AGENT_CONFIG.instructions_template,
+            tools=[auditor_file_tools, auditor_shell_tools, read_report_from_repository, save_report_to_repository],
+            model=deep_dive_auditor_model,
+            monitoring=True,
+            memory=team_main_memory,
+            enable_user_memories=False,
+            reasoning=True,
+        )
+        success_criteria = dedent(f'''\
+            All tasks in the audit plan are completed.
+            All vulnerabilities are identified and reported.
+            A detailed report is generated.
+        ''')
+
+        # Prepare instructions by replacing placeholders
+        current_instructions = TEAM_LEADER_INSTRUCTIONS_TEMPLATE
+        current_instructions = current_instructions.replace("<<SHARED_REPORTS_DIR>>", SHARED_REPORTS_DIR)
+        current_instructions = current_instructions.replace("<<DEPLOYMENT_REPORT_FILENAME>>", DEPLOYMENT_REPORT_FILENAME)
+        current_instructions = current_instructions.replace("<<PLAN_FILENAME>>", PLAN_FILENAME)
+        current_instructions = current_instructions.replace("<<INDIVIDUAL_DEEP_DIVE_REPORT_PREFIX>>", INDIVIDUAL_DEEP_DIVE_REPORT_PREFIX)
+        current_instructions = current_instructions.replace("<<AGGREGATED_DEEP_DIVE_FILENAME_PREFIX>>", AGGREGATED_DEEP_DIVE_FILENAME_PREFIX)
+        # Placeholders for agent IDs also need to be replaced if they are part of the template string
+        current_instructions = current_instructions.replace("<<ATTACK_SURFACE_PLANNING_AGENT_ID>>", ATTACK_SURFACE_PLANNING_AGENT_ID)
+        current_instructions = current_instructions.replace("<<DEEP_DIVE_SECURITY_AUDITOR_AGENT_ID>>", DEEP_DIVE_SECURITY_AUDITOR_AGENT_ID)
+
+
         super().__init__(
-            team_id=SECURITY_AUDIT_TEAM_ID,
-            name=SECURITY_AUDIT_TEAM_NAME,
+            team_id=team_id,
+            name=name,
             description=SECURITY_AUDIT_TEAM_DESCRIPTION,
             model=team_leader_model,
-            instructions=TEAM_LEADER_INSTRUCTIONS,
+            instructions=current_instructions, # Use the processed instructions
             members=[env_perception_agent, attack_planning_agent, deep_dive_auditor],
-            tools=[team_leader_file_tools, update_state_tool, read_state_tool],
-            mode="coordinate",
+            tools=team_tools,
+            user_id=self.user_id,
             memory=team_main_memory,
-            session_state={'audit_plan_items': [], 'current_audit_item_index': 0, 'aggregated_findings': ""},
-            enable_team_history=True,
-            share_member_interactions=False,
-            enable_agentic_context=True,
-            markdown=True,
+            storage=team_chat_storage,
+            session_state=current_session_state,
             debug_mode=True,
-            show_tool_calls=True,
-            show_members_responses=True,
+            enable_team_history=True,
+            add_member_tools_to_system_message=False,
+            num_of_interactions_from_history=3,
+            read_team_history=False,
+            enable_agentic_context=True,
+            **kwargs,
         )
+        self.db_path = db_path 
+        print(f"SecurityAuditTeam '{name}' initialized with leader model '{model_id}'.")
 
     async def stream_team_audit(
         self,
@@ -215,7 +312,7 @@ class SecurityAuditTeam(Team):
         if not session_id:
             session_id = f"session_{uuid.uuid4()}"
 
-        print(f"Starting Team Audit with Run ID: {run_id}, Session ID: {session_id}")
+        print(f"Starting Team Audit with Run ID: {run_id}, Session ID: {session_id}, User ID: {self.user_id}")
         print(f"Initial User Query: {initial_user_query}")
         print(f"Reports will be saved in: {SHARED_REPORTS_DIR}")
         os.makedirs(SHARED_REPORTS_DIR, exist_ok=True)
@@ -231,33 +328,18 @@ class SecurityAuditTeam(Team):
         print(f"Team Audit Run ID {run_id} completed.")
 
 async def main():
-    # Example of how to run the team
-    # Ensure OPENROUTER_API_KEY is set in your environment
-    # And vulnagent8.core.model_factory is configured for OpenRouter or your desired model provider
-
-    # Create a dummy project structure and files for testing if needed
-    # For example:
-    # os.makedirs("../data/mall_code_test/src", exist_ok=True)
-    # with open("../data/mall_code_test/src/main.py", "w") as f:
-    #     f.write("print('Hello from main.py')")
-    # with open("../data/mall_code_test/pom.xml", "w") as f:
-    #     f.write("<project><version>1.0.0</version></project>")
-
     print(f"Shared reports will be in: {os.path.abspath(SHARED_REPORTS_DIR)}")
 
-    audit_team = SecurityAuditTeam(model_id="openrouter/google/gemini-2.5-flash-preview-05-20") # or your preferred model
+    audit_team = SecurityAuditTeam(model_id="openrouter/google/gemini-2.5-flash-preview-05-20", user_id="test_cli_user_main_async")
     
     test_query = "Perform a security audit of the provided project. The project is a simple Python application with a pom.xml file. Identify potential vulnerabilities."
-    # More specific query for a real project:
-    # test_query = "Audit the 'mall' project located in /data/code. Focus on its Java Spring Boot microservices (mall-admin, mall-portal, mall-search) and their interactions, paying attention to authentication, authorization, input validation, and data handling for common web vulnerabilities. The project uses Nginx as a reverse proxy and various backing services like MySQL, MongoDB, Redis, Elasticsearch, and RabbitMQ, as detailed in its docker-compose files."
 
-
-    print("\n--- Streaming Team Audit ---")
+    print("\n--- Streaming Team Audit (Asynchronous) ---")
     async for chunk in audit_team.stream_team_audit(initial_user_query=test_query):
-        if chunk.event == "on_agent_action_end" and chunk.run_id == audit_team.team.id : # or chunk.run_id.startswith("agt_")
+        if chunk.event == "on_agent_action_end" and chunk.run_id == audit_team.team.id : 
              if chunk.data and chunk.data.get("output"):
                 print(f"\n[Team Log Stream] Event: {chunk.event}, Agent: {chunk.run_id}")
-                print(f"Content: {chunk.data.get('output')[:500]}...") # Print first 500 chars
+                print(f"Content: {chunk.data.get('output')[:500]}...") 
         elif chunk.event == "on_tool_use":
             print(f"\n[Team Log Stream] Event: {chunk.event}, Agent: {chunk.run_id}, Tool: {chunk.data.get('name')}")
             if chunk.data.get("input"): print(f"Tool Input: {chunk.data.get('input')}")
@@ -265,10 +347,10 @@ async def main():
              print(f"\n[Team Log Stream] Event: {chunk.event}, Agent: {chunk.run_id}, Tool: {chunk.data.get('name')}")
              if chunk.data.get("output"): print(f"Tool Output: {chunk.data.get('output')[:300]}...")
         elif chunk.event == "on_agent_stream_chunk":
-            if chunk.run_id == audit_team.team.id: # only print stream from Team Leader
+            if chunk.run_id == audit_team.team.id: 
                  print(chunk.data.get("output_chunk", ""), end="", flush=True)
 
-    print("\n--- Team Audit Complete ---")
+    print("\n--- Team Audit Complete (Asynchronous) ---")
     print(f"Final reports should be in: {SHARED_REPORTS_DIR}")
     print("Check for files like:")
     print(f"- {DEPLOYMENT_REPORT_FILENAME}")
@@ -276,21 +358,8 @@ async def main():
     print(f"- Files starting with {INDIVIDUAL_DEEP_DIVE_REPORT_PREFIX}")
     print(f"- Files starting with {AGGREGATED_DEEP_DIVE_FILENAME_PREFIX}")
 
-
 if __name__ == "__main__":
-    # To run this:
-    # Ensure OPENROUTER_API_KEY is set if using OpenRouter models.
-    # From the root of the 'agno' project (or wherever vulnagent8 is a module):
-    # python -m vulnagent8.workflows.security_audit_team
-    # asyncio.run(main())
-
-    # For testing with a real project, you might need to adjust paths or mount volumes if running in Docker.
-    # The `SHARED_REPORTS_DIR` is currently set relative to `report_repository_tools.py`.
-    # We might want to make it absolute or configurable for easier Docker volume mapping.
-    # For now, it resolves to `vulnagent8/tools/../../shared_reports` -> `vulnagent8/shared_reports`
-    
-    # HACK: For running this file directly for dev, adjust Python path
     import sys
-    sys.path.append(os.path.join(os.path.dirname(__file__), '../..')) #  Adds 'agno' (parent of 'vulnagent8') to path
+    sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
     
     asyncio.run(main()) 

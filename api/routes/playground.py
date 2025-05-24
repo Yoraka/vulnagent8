@@ -10,6 +10,7 @@ from fastapi import APIRouter
 from agents.sage import get_sage
 from agents.scholar import get_scholar
 from workflows.security_audit_team import SecurityAuditTeam
+from workflows.minimal_test_team import MinimalTestTeam
 
 agent_storage: str = "tmp/agents.db"
 
@@ -45,12 +46,20 @@ finance_agent = Agent(
 # Get Sage and Scholar agent instances
 sage_agent = get_sage()
 scholar_agent = get_scholar()
-audit_team = SecurityAuditTeam(model_id="openrouter/google/gemini-2.5-flash-preview-05-20")
+
+# Instantiate Teams
+# Ensure DEFAULT_MODEL_ID is available or pass a specific one
+# from core.model_factory import DEFAULT_MODEL_ID # Assuming you might want this #openrouter/anthropic/claude-sonnet-4
+audit_team = SecurityAuditTeam(model_id="openrouter/openai/o4-mini", team_leader_model_id="grok-3-fast", env_reporter_model_id="openrouter/anthropic/claude-sonnet-4", attack_planning_model_id="openrouter/anthropic/claude-sonnet-4", deep_dive_auditor_model_id="openrouter/openai/o4-mini", user_id="playground_default_user")
+minimal_test_team_instance = MinimalTestTeam(model_id="openrouter/google/gemini-2.5-flash-preview-05-20", user_id="playground_default_user")
 
 playground_router = APIRouter(prefix="/playground", tags=["Playground"])
 
 # Instantiate Playground
-playground_instance = Playground(agents=[web_agent, finance_agent, sage_agent, scholar_agent], teams=[audit_team])
+playground_instance = Playground(
+    agents=[web_agent, finance_agent, sage_agent, scholar_agent], 
+    teams=[audit_team, minimal_test_team_instance]
+)
 
 app = playground_instance.get_app()
 

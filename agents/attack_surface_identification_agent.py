@@ -34,10 +34,10 @@ ATTACK_SURFACE_PLANNING_AGENT_INSTRUCTIONS = dedent("""\
 
 **2. (可选但推荐) 获取项目顶层概览信息以辅助规划代码审计:**
     a.  为了更好地理解项目的整体技术栈、主要模块划分、核心依赖，从而制定更精准的**代码审计计划**，你可以选择性地读取项目根目录下的构建文件 (如 `pom.xml` 或 `build.gradle`) 和主要的全局配置文件 (如 Spring Boot的 `application.properties` 或 `application.yml`)。
-    b.  **工具使用限制**: 此步骤中对 `FileTools` 的使用应仅限于读取这些顶层文件以获取宏观的、指导代码审计方向的信息。**禁止进行递归的文件遍历或阅读大量非配置、非构建脚本的源代码。** 你的目标是辅助规划代码审计范围和重点，不是自己执行审计。
+    b.  **工具使用限制**: 此步骤中对 `FileTools` 的使用应仅限于读取这些顶层文件以获取宏观的、指导代码审计方向的信息。**禁止进行递归的文件遍历或阅读大量非配置、非构建脚本的源代码。** 你的目标是辅助规划代码审计范围和重点，不是自己执行审计。你的 `FileTools` 已配置了 `/data/mall_code` 作为基础目录，因此读取如 `/data/mall_code/pom.xml` 这样的文件时，你应该使用相对路径，例如 `FileTools.read_file(target_file="pom.xml")`。
     c.  例如，你可以：
-        *   `FileTools.read_file("{workspace_path}/pom.xml")` 来识别主要的框架（如Spring Boot, Spring Security）、数据持久层（如MyBatis, Hibernate）、关键第三方库及其版本（用于后续的已知漏洞依赖检查规划）。
-        *   `FileTools.read_file("{workspace_path}/src/main/resources/application.yml")` 来了解核心服务配置，如数据库连接参数（注意检查是否硬编码敏感信息）、安全相关配置（如JWT密钥、加密算法等）。
+        *   `FileTools.read_file(target_file="pom.xml")` 来识别主要的框架（如Spring Boot, Spring Security）、数据持久层（如MyBatis, Hibernate）、关键第三方库及其版本（用于后续的已知漏洞依赖检查规划）。
+        *   `FileTools.read_file(target_file="src/main/resources/application.yml")` 来了解核心服务配置，如数据库连接参数（注意检查是否硬编码敏感信息）、安全相关配置（如JWT密钥、加密算法等）。
 
 **3. 制定《攻击面调查计划》(Core Task - MANDATORY - 聚焦白盒代码审计):**
     a.  基于以上所有信息，制定一份结构化的Markdown文档：《攻击面调查计划》。此计划的核心是**指导后续的代码审计员（可能是AI或人类）在哪里看、看什么、怎么看代码。**
@@ -90,8 +90,9 @@ ATTACK_SURFACE_PLANNING_AGENT_INSTRUCTIONS = dedent("""\
 **4. 保存《攻击面调查计划》(Mandatory Final Step):**
     a.  在完成计划的制定后，你**必须**调用 `save_report_to_repository` 工具。
     b.  将你完整生成的Markdown格式的《攻击面调查计划》作为 `report_content` 参数传递。
-    c.  使用 `report_name="AttackSurfaceInvestigationPlan_whitebox.md"` (注意，文件名已在Team Leader指令中标准化) 作为报告名称。
-    d.  此步骤确保你的规划成果被妥善保存，供后续阶段使用。
+    c.  你**必须**使用字面意义上完全一样的字符串 `report_name="AttackSurfaceInvestigationPlan_whitebox.md"` 作为报告名称参数。不允许任何变体或动态生成的文件名。此文件名已在团队领导的指令中标准化。
+    d.  **Do NOT use `FileTools.save_file` or shell commands like `echo >` for saving this plan.** Only `save_report_to_repository` is permitted for this action.
+    e.  此步骤确保你的规划成果被妥善保存，供后续阶段使用。
 
 **5. 工具使用日志 (Mandatory Appendix in your thought process):**
     *   在你的内部思考和决策过程中，记录你使用了哪些工具（`read_report_from_repository`, `FileTools.read_file` 等），关键参数是什么，以及从这些工具调用中获取了哪些关键信息用于辅助你制定代码审计计划。

@@ -35,8 +35,8 @@ def get_model_instance(model_id_str: str) -> Any:
             base_url="https://openrouter.ai/api/v1",
             api_key=openrouter_api_key
         )
-    elif model_id_str == "grok-3-beta" or "grok" in model_id_str.lower():
-        return xAI(id=model_id_str if model_id_str else "grok-3-beta")
+    elif model_id_str == "grok-3" or "grok" in model_id_str.lower():
+        return xAI(id=model_id_str if model_id_str else "grok-3")
     elif model_id_str == "gpt-4o" or "gpt-4" in model_id_str.lower(): 
         return OpenAIChat(id=model_id_str if model_id_str else "gpt-4o")
     # TODO: Add mappings for other models like "o3-mini", "qwen/qwen3-235b-a22b"
@@ -50,4 +50,4 @@ def get_model_instance(model_id_str: str) -> Any:
     else:
         # Default fallback if no specific model is matched
         print(f"Warning: Model ID '{model_id_str}' not explicitly recognized. Falling back to Grok.")
-        return xAI(id="grok-3-beta") 
+        return xAI(id="grok-3") 

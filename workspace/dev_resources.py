@@ -70,16 +70,6 @@ dev_streamlit = Streamlit(
     # Read secrets from secrets/dev_app_secrets.yml
     secrets_file=ws_settings.ws_root.joinpath("workspace/secrets/dev_app_secrets.yml"),
     depends_on=[dev_db],
-    container_volumes={
-        '/Users/fancyechocui/Downloads/mall-master': {  # Host path
-            'bind': '/data/mall_code',  # Container path
-            'mode': 'rw'  # Read-write access
-        },
-        '/Users/fancyechocui/Downloads/mall-admin-web-master': {  # Host path
-            'bind': '/data/mall_admin_web',  # Containers path
-            'mode': 'rw'  # Read-write access
-        },
-    }
 )
 
 # -*- FastAPI running on port 8000:8000
@@ -108,7 +98,17 @@ dev_playground = FastApi(
     env_vars=container_env,
     use_cache=True,
     secrets_file=ws_settings.ws_root.joinpath("workspace/secrets/dev_app_secrets.yml"),
-    depends_on=[dev_db]
+    depends_on=[dev_db],
+    container_volumes={
+        '/Users/fancyechocui/Downloads/mall-master': {  # Host path
+            'bind': '/data/mall_code',  # Container path
+            'mode': 'rw'  # Read-write access
+        },
+        '/Users/fancyechocui/Downloads/mall-admin-web-master': {  # Host path
+            'bind': '/data/mall_admin_web',  # Containers path
+            'mode': 'rw'  # Read-write access
+        },
+    }
 )
 
 # -*- Dev DockerResources
