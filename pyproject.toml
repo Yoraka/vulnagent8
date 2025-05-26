@@ -22,7 +22,9 @@ dependencies = [
   "streamlit",
   "tiktoken",
   "typer",
-  "yfinance"
+  "yfinance",
+  "googlesearch-python", 
+  "pycountry"
 ]
 
 [project.optional-dependencies]

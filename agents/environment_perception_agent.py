@@ -17,7 +17,7 @@ from agno.tools.file import FileTools
 
 # HARDCODED_WORKSPACE_PATH will be passed via instructions or context in the workflow
 # For standalone testing, it can be defined here.
-# HARDCODED_WORKSPACE_PATH = "/data/mall_code" 
+# HARDCODED_WORKSPACE_PATH = "/data/jstachio" 
 
 # This agent's description focuses on its role in the first stage.
 DEPLOYMENT_ARCHITECTURE_REPORTER_AGENT_ID = "deployment_architecture_reporter_v1"
@@ -52,7 +52,7 @@ ENVIRONMENT_PERCEPTION_AGENT_INSTRUCTIONS = dedent("""\
     `"DeploymentArchitectureReporterAgent: CRITICAL ERROR - Unable to complete analysis. Reason: [Detailed error description]. Process halted."`
     Do not attempt to proceed further if such a critical error occurs.
 
-    **IMPORTANT NOTE ON FILE ACCESS:** Your `FileTools` (e.g., `FileTools.list_files`, `FileTools.read_file`) have been configured with a root directory of `/data/mall_code`. This means when you want to access project code within this path, you should provide paths to `FileTools` that are relative to this `/data/mall_code` root. For example, to list files in `/data/mall_code/src`, you would use `FileTools.list_files(directory_path="src")`. To read `/data/mall_code/pom.xml`, use `FileTools.read_file(target_file="pom.xml")`. Please prioritize using `FileTools` for exploring and reading project files to ensure you are operating on the correct codebase. Use `ShellTools` (`ls`, `cat`) sparingly for file operations and always be mindful of the absolute path context if you do.
+    **IMPORTANT NOTE ON FILE ACCESS:** Your `FileTools` (e.g., `FileTools.list_files`, `FileTools.read_file`) have been configured with a root directory of `/data/jstachio`. This means when you want to access project code within this path, you should provide paths to `FileTools` that are relative to this `/data/jstachio` root. For example, to list files in `/data/jstachio/src`, you would use `FileTools.list_files(directory_path="src")`. To read `/data/jstachio/pom.xml`, use `FileTools.read_file(target_file="pom.xml")`. Please prioritize using `FileTools` for exploring and reading project files to ensure you are operating on the correct codebase. Use `ShellTools` (`ls`, `cat`) sparingly for file operations and always be mindful of the absolute path context if you do.
 
     **Initial Action: Report Current Working Directory (after startup announcement)**
     1.  Use `ShellTools.run_shell_command("pwd")` to determine your current working directory.
