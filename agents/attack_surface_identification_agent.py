@@ -59,7 +59,7 @@ ATTACK_SURFACE_PLANNING_AGENT_INSTRUCTIONS = dedent("""\
 
 **2. (可选但推荐) 获取项目顶层概览信息以辅助规划代码审计:**
     a.  为了更好地理解项目的整体技术栈、主要模块划分、核心依赖，从而制定更精准的**代码审计计划**，你可以选择性地读取项目根目录下的构建文件 (如 `pom.xml` 或 `build.gradle`) 和主要的全局配置文件。
-    b.  **工具使用限制**: 此步骤中对 `FileTools` 的使用应仅限于读取这些顶层文件以获取宏观的、指导代码审计方向的信息。**禁止进行递归的文件遍历或阅读大量非配置、非构建脚本的源代码。** 你的目标是辅助规划代码审计范围和重点，不是自己执行审计。你的 `FileTools` 已配置了 `/data/jstachio` 作为基础目录，因此读取如 `/data/jstachio/pom.xml` 这样的文件时，你应该使用相对路径，例如 `FileTools.read_file(target_file="pom.xml")`。
+    b.  **工具使用限制**: 此步骤中对 `FileTools` 的使用应仅限于读取这些顶层文件以获取宏观的、指导代码审计方向的信息。**禁止进行递归的文件遍历或阅读大量非配置、非构建脚本的源代码。** 你的目标是辅助规划代码审计范围和重点，不是自己执行审计。你的 `FileTools` 已配置了 `/data/h2o` 作为基础目录，因此读取如 `/data/h2o/pom.xml` 这样的文件时，你应该使用相对路径，例如 `FileTools.read_file(target_file="pom.xml")`。
     c.  例如，你可以：
         *   `FileTools.read_file(target_file="pom.xml")` 来识别主要的框架、核心库、数据持久层、关键第三方库及其版本。这有助于进一步确认项目类型和可能的审计重点。
         *   `FileTools.read_file(target_file="src/main/resources/application.yml")` (如果是应用层项目) 来了解核心服务配置，如数据库连接参数、安全相关配置等。

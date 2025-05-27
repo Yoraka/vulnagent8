@@ -22,7 +22,7 @@ JStachio 项目的核心是一个Java Mustache模板引擎及其相关的编译�
 
 ### A. 核心模板引擎与编译器 (JStachio API & Compiler Modules)
 
-- [ ] **CODE-REVIEW-ITEM-001: 模板解析与编译过程中的潜在模板注入风险 (主动缺陷)**
+- [x] **CODE-REVIEW-ITEM-001: (已完成, 详见DeepDiveReport_TASK_CODE-REVIEW-ITEM-001.md) ** 模板解析与编译过程中的潜在模板注入风险 (主动缺陷)**
     *   **目标代码/配置区域**:
         *   `io.jstach.apt` 包下的注解处理器相关类，特别是处理模板文件内容、解析模板结构、以及生成Java源代码的逻辑。
         *   `io.jstach.jstachio` 核心API中与模板加载、缓存、渲染相关的类。

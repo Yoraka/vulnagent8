@@ -6,116 +6,139 @@ from pathlib import Path # Import Path
 from agno.agent import Agent
 from agno.team import Team
 from agno.tools import Function # Import Function for wrapping callables
+from agno.memory.v2.memory import Memory
+from agno.memory.v2.db.sqlite import SqliteMemoryDb
+from agno.memory.v2.schema import UserMemory
 
-from core.model_factory import get_model_instance, DEFAULT_MODEL_ID 
-from agents.deep_dive_security_auditor_agent import (
-    DEEP_DIVE_SECURITY_AUDITOR_AGENT_CONFIG,
-    DEEP_DIVE_SECURITY_AUDITOR_AGENT_ID,
-    DeepDiveReportStructuredOutput # Import the Pydantic model
-)
-from agno.tools.file import FileTools 
-from agno.tools.shell import ShellTools 
-from tools.report_repository_tools import save_report_to_repository, read_report_from_repository 
+from core.model_factory import get_model_instance, DEFAULT_MODEL_ID
+# Commenting out DeepDive agent imports as it's not used in this specific test
+# from agents.deep_dive_security_auditor_agent import (
+#     DEEP_DIVE_SECURITY_AUDITOR_AGENT_CONFIG,
+#     DEEP_DIVE_SECURITY_AUDITOR_AGENT_ID,
+# )
+from agno.tools.file import FileTools
+from agno.tools.shell import ShellTools
+from tools.report_repository_tools import save_report_to_repository, read_report_from_repository
 # Import the session state tool classes
-from tools.session_state_tools import ReadSessionStateTool, UpdateSessionStateTool 
+from tools.session_state_tools import ReadSessionStateTool, UpdateSessionStateTool
 from tools.project_structure_tools import ListDirectoryTreeTool # Import the new tool
 
-from pydantic import BaseModel, Field
-
 # Standard plan filename, consistent with SecurityAuditTeam
-PLAN_FILENAME_FOR_TEST = "AttackSurfaceInvestigationPlan_whitebox.md" 
+# PLAN_FILENAME_FOR_TEST = "AttackSurfaceInvestigationPlan_whitebox.md" # Not used in this version
 
-# MINIMAL_TEAM_LEADER_INSTRUCTIONS_CACHE_TEST = dedent(f'''...''') # Commenting out previous cache test instructions
+# --- New Agent IDs ---
+CONTEXT_SETTER_AGENT_ID = "context_setter_agent_v1"
+CONTEXT_READER_AGENT_ID = "context_reader_agent_v1"
+SHARED_MEMORY_FACT_TOPIC = "shared_fact"
 
-# New Minimal Team Leader Instructions for Deep Dive Agent Cache Test & Tree Tool Test
-MINIMAL_TEAM_LEADER_INSTRUCTIONS_DEEP_DIVE_CACHE_TEST = dedent(f'''\
-You are a Test Team Leader. Your sole task is to delegate a specific multi-step file operation task to the DeepDiveSecurityAuditorAgent to test its internal input caching behavior, its ability to use the list_directory_tree tool, AND its structured output capability.
+# New Minimal Team Leader Instructions for Context Sharing Test
+MINIMAL_TEAM_LEADER_INSTRUCTIONS_CONTEXT_SHARING_TEST = dedent(f'''\
+You are a Test Team Leader. Your task is to test context sharing between two member agents using shared memory.
 
 **Agent Details:**
-- Agent ID for delegation: '{DEEP_DIVE_SECURITY_AUDITOR_AGENT_ID}'
-- Agent Name: '{DEEP_DIVE_SECURITY_AUDITOR_AGENT_CONFIG.name}'
+- Context Setter Agent ID: '{CONTEXT_SETTER_AGENT_ID}'
+- Context Reader Agent ID: '{CONTEXT_READER_AGENT_ID}'
 
 **Your Tools:**
 - `atransfer_task_to_member`: To delegate tasks.
 
 **Workflow:**
 
-**Single Phase: Delegate Test Task to DeepDiveSecurityAuditorAgent**
-1.  The specific task description for the DeepDiveSecurityAuditorAgent is PREDEFINED in its own instructions for general tasks. You will provide a specific sequence for this test.
-2.  You **MUST** use the `atransfer_task_to_member` tool to delegate this task.
-    - `member_id`: '{DEEP_DIVE_SECURITY_AUDITOR_AGENT_ID}'
-    - `task_description`: "Perform a test sequence: First, use the `list_directory_tree` tool with `target_path="."` and `max_depth=1` to list the contents of your base directory. Then, perform your predefined multi-step cache test task which involves reading config_for_cache_test.txt, then status_for_cache_test.txt, then creating and saving CacheTestDeepDiveReport.md. Your final output should be a JSON object conforming to the DeepDiveReportStructuredOutput model, including the filename CacheTestDeepDiveReport.md."
-    - `expected_output`: "A JSON object string that conforms to the DeepDiveReportStructuredOutput model. For example: {{ \"report_filename\": \"CacheTestDeepDiveReport.md\", \"status_message\": \"Report saved successfully.\" }}"
-3.  The DeepDiveSecurityAuditorAgent is expected to perform several internal tool calls and return a structured JSON output.
-4.  Once the DeepDiveSecurityAuditorAgent responds with the JSON object, you must parse this JSON, extract the value of the `report_filename` field.
-5.  Your final response for this entire interaction **MUST BE ONLY** the extracted `report_filename` (which should be "CacheTestDeepDiveReport.md"), or any critical error it might report if it fails or if the JSON is malformed.
+**Phase 1: Set Context**
+1.  You will receive an initial user query which should contain a fact to be shared. For example: "Please ask the team to remember the fact: The sky is blue."
+2.  Extract this fact (e.g., "The sky is blue").
+3.  Use the `atransfer_task_to_member` tool to delegate a task to the `{CONTEXT_SETTER_AGENT_ID}`.
+    - `member_id`: '{CONTEXT_SETTER_AGENT_ID}'
+    - `task_description`: "Please remember the following fact and associate it with the topic '{SHARED_MEMORY_FACT_TOPIC}': '[The extracted fact from user query]'."
+    - `expected_output`: "Confirmation that the fact has been remembered."
+4.  Await confirmation from the `{CONTEXT_SETTER_AGENT_ID}`.
 
-Do not add any other commentary. Strictly follow this delegation.
+**Phase 2: Read and Use Context**
+1.  After confirmation from `{CONTEXT_SETTER_AGENT_ID}`, use `atransfer_task_to_member` to delegate a task to the `{CONTEXT_READER_AGENT_ID}`.
+    - `member_id`: '{CONTEXT_READER_AGENT_ID}'
+    - `task_description`: "Please recall the fact associated with the topic '{SHARED_MEMORY_FACT_TOPIC}' and then state: 'Based on shared context, I know that [recalled fact].'"
+    - `expected_output`: "A sentence in the format: 'Based on shared context, I know that [recalled fact].'"
+2.  Your final response for this entire interaction **MUST BE ONLY** the sentence generated by the `{CONTEXT_READER_AGENT_ID}`.
+
+Strictly follow this delegation and information flow. Do not add any other commentary.
 ''')
-class DeepDiveReportStructuredOutput(BaseModel):
-    report_filename: str = Field(..., description="The filename of the saved Markdown report. This is the primary output.")
-    status_message: str = Field(..., description="A brief status message, e.g., 'Report saved successfully', 'Audit completed with warnings', 'Error during audit'.")
-    key_findings_summary: Optional[List[str]] = Field(None, description="Optional: A list of 1-3 very brief strings highlighting the most critical findings, if any. Omit if no critical findings or if an error occurred.")
-    tool_calls_made: Optional[int] = Field(None, description="Optional: Number of tool calls made during the audit for this task.")
 
 class MinimalTestTeam(Team):
     def __init__(
         self,
         model_id: str = DEFAULT_MODEL_ID,
-        user_id: Optional[str] = "default_user",
-        team_id: str = "minimal_test_team_deep_dive_v1",
-        name: str = "MinimalTestDeepDiveTeam_Phase3Sim",
+        user_id: Optional[str] = "default_user_minimal_team", # Changed for clarity
+        team_id: str = "minimal_test_team_context_sharing_v1", # Changed for clarity
+        name: str = "MinimalContextSharingTestTeam", # Changed for clarity
+        db_path: str = "minimal_team_memory.db", # Added for shared memory
         **kwargs: Any,
     ):
         team_leader_model = get_model_instance(model_id)
         if not team_leader_model:
             raise ValueError(f"Could not get team_leader_model instance for {model_id}")
-        
-        auditor_agent_model_id = model_id # Use same model for auditor in this test team
-        auditor_agent_model = get_model_instance(auditor_agent_model_id)
-        if not auditor_agent_model:
-            raise ValueError(f"Could not get auditor_agent_model instance for {auditor_agent_model_id}")
 
-        # Define base directory for auditor's file tools
-        auditor_base_dir = Path("/data/jstachio") 
-        # Ensure it exists for the tools if they are strict at init, though they should handle it gracefully
-        # auditor_base_dir.mkdir(parents=True, exist_ok=True) # Usually not tool's job to create its base
+        agent_model = get_model_instance(model_id) # Use same model for new agents
+        if not agent_model:
+            raise ValueError(f"Could not get agent_model instance for {model_id}")
 
-        auditor_file_tools = FileTools(base_dir=str(auditor_base_dir))
-        auditor_shell_tools = ShellTools()
-        
-        # Instantiate and wrap ListDirectoryTreeTool
-        list_dir_tree_tool_instance = ListDirectoryTreeTool(base_dir=str(auditor_base_dir))
-        list_directory_tree_tool_wrapped = Function.from_callable(list_dir_tree_tool_instance.__call__)
-        list_directory_tree_tool_wrapped.name = list_dir_tree_tool_instance.name
-        list_directory_tree_tool_wrapped.description = list_dir_tree_tool_instance.description
-        
-        deep_dive_agent_tools = [
-            auditor_file_tools,
-            auditor_shell_tools,
-            read_report_from_repository,
-            save_report_to_repository,
-            list_directory_tree_tool_wrapped # Add the new tool
-        ]
-        deep_dive_auditor_agent = Agent(
-            agent_id=DEEP_DIVE_SECURITY_AUDITOR_AGENT_ID,
-            name=DEEP_DIVE_SECURITY_AUDITOR_AGENT_CONFIG.name,
-            description=DEEP_DIVE_SECURITY_AUDITOR_AGENT_CONFIG.description,
-            instructions=DEEP_DIVE_SECURITY_AUDITOR_AGENT_CONFIG.instructions_template, 
-            tools=deep_dive_agent_tools,
-            model=auditor_agent_model,
-            user_id=user_id,
+        # --- Shared Memory Setup ---
+        self.db_path = db_path
+        sqlite_db_backend = SqliteMemoryDb(db_file=self.db_path, table_name="minimal_team_shared_memory")
+        shared_team_memory = Memory(db=sqlite_db_backend)
+        # --- End Shared Memory Setup ---
+
+        # --- ContextSetterAgent ---
+        context_setter_agent = Agent(
+            agent_id=CONTEXT_SETTER_AGENT_ID,
+            name="ContextSetterAgent",
+            description="Receives a fact and stores it in shared memory under a specific topic.",
+            instructions=dedent(f'''\
+                You are the ContextSetterAgent. Your primary task is to commit information to your memory.
+                You will receive a `task_description` like: "Please remember the following fact and associate it with the topic '{SHARED_MEMORY_FACT_TOPIC}': '[fact_to_remember]'."
+                Identify the '[fact_to_remember]' and the topic it needs to be associated with.
+                You MUST use your internal memory capabilities to store this fact, associating it with the given topic (e.g., '{SHARED_MEMORY_FACT_TOPIC}').
+                Specifically, you should use `self.memory.add_user_memory(memory=UserMemory(memory='[fact_to_remember]', topics=['{SHARED_MEMORY_FACT_TOPIC}']), user_id=self.user_id)`.
+                Respond with a simple confirmation once you have stored the fact, for example: "I have remembered that [fact_to_remember] under topic '{SHARED_MEMORY_FACT_TOPIC}'."
+            '''),
+            model=agent_model,
+            enable_agentic_memory=True,
+            memory=shared_team_memory,
+            add_history_to_messages=False,
+            enable_user_memories=False,
+            user_id=user_id, # Crucial for shared memory
+            # No specific tools needed, uses self.memory directly
             debug_mode=True,
-            response_model=DeepDiveReportStructuredOutput, # Added response_model
-            # use_json_mode=True # Can be added if model supports strict JSON mode and it's desired
         )
-        
-        # Team specific tools for the Leader
-        # Instantiate the tool classes
+        # --- End ContextSetterAgent ---
+
+        # --- ContextReaderAgent ---
+        context_reader_agent = Agent(
+            agent_id=CONTEXT_READER_AGENT_ID,
+            name="ContextReaderAgent",
+            description="Reads a fact from shared memory associated with a specific topic and uses it.",
+            instructions=dedent(f'''\
+                You are the ContextReaderAgent. Your primary task is to recall a specific piece of information from your memory and use it.
+                You will receive a `task_description` like: "Please recall the fact associated with the topic '{SHARED_MEMORY_FACT_TOPIC}' and then state: 'Based on shared context, I know that [recalled fact].'"
+                You MUST use your internal memory capabilities to retrieve the fact associated with the given topic (e.g., '{SHARED_MEMORY_FACT_TOPIC}').
+                Specifically, you should use `self.memory.get_user_memories(user_id=self.user_id, topics=['{SHARED_MEMORY_FACT_TOPIC}'])` and extract the memory content from the result.
+                Once retrieved, your final output **MUST** be the sentence: 'Based on shared context, I know that [the recalled fact].'
+                If no fact is found for the topic, output: 'I could not find any fact under topic {SHARED_MEMORY_FACT_TOPIC}.'
+            '''),
+            model=agent_model,
+            add_history_to_messages=False,
+            memory=shared_team_memory,
+            enable_agentic_memory=True,
+            enable_user_memories=False,
+            user_id=user_id, # Crucial for shared memory
+            # No specific tools needed, uses self.memory directly
+            debug_mode=True,
+        )
+        # --- End ContextReaderAgent ---
+
+        # Team specific tools for the Leader (Session state tools are kept for potential future use, but not core to this test)
         update_tool_instance = UpdateSessionStateTool()
         read_tool_instance = ReadSessionStateTool()
 
-        # Wrap their __call__ methods using Function.from_callable
         update_session_state_tool_func = Function.from_callable(update_tool_instance.__call__)
         update_session_state_tool_func.name = update_tool_instance.name
         update_session_state_tool_func.description = update_tool_instance.description
@@ -123,27 +146,31 @@ class MinimalTestTeam(Team):
         read_session_state_tool_func = Function.from_callable(read_tool_instance.__call__)
         read_session_state_tool_func.name = read_tool_instance.name
         read_session_state_tool_func.description = read_tool_instance.description
-        
+
         team_level_tools = [
-            update_session_state_tool_func, 
-            read_session_state_tool_func, 
-            read_report_from_repository
+            update_session_state_tool_func,
+            read_session_state_tool_func,
+            # read_report_from_repository # Not used in this specific test
         ]
 
         super().__init__(
             team_id=team_id,
             name=name,
-            instructions=MINIMAL_TEAM_LEADER_INSTRUCTIONS_DEEP_DIVE_CACHE_TEST, 
-            members=[deep_dive_auditor_agent],
+            instructions=MINIMAL_TEAM_LEADER_INSTRUCTIONS_CONTEXT_SHARING_TEST, # Use new instructions
+            members=[context_setter_agent, context_reader_agent], # Use new agents
             model=team_leader_model,
             tools=team_level_tools,
             user_id=user_id,
-            session_state={'audit_plan_items': [], 'current_audit_item_index': 0, 'individual_report_files': []}, 
-            debug_mode=True, 
-            enable_team_history=True, 
-            **kwargs, 
+            # memory=shared_team_memory, # Team can also have the shared memory
+            storage=None, # For this minimal test, team-level storage might not be strictly needed if agents manage their own or it's handled by run
+            session_state={'shared_fact_topic': SHARED_MEMORY_FACT_TOPIC}, # Example session state
+            debug_mode=True,
+            enable_team_history=False, # Enable to see the flow
+            read_team_history=False, # Keep false to rely on explicit tasking
+            # num_of_interactions_from_history=1, # Minimal history for leader
+            **kwargs,
         )
-        print(f"MinimalTestTeam '{name}' initialized with leader model '{model_id}'. Testing ListDirectoryTreeTool and class-based session tools.")
+        print(f"MinimalTestTeam '{name}' initialized. Testing context sharing between agents using shared memory.")
 
 # The async main() and if __name__ == "__main__": block are removed.
 # Instantiation will now be done in playground.py or other runner scripts.

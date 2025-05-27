@@ -100,8 +100,8 @@ dev_playground = FastApi(
     secrets_file=ws_settings.ws_root.joinpath("workspace/secrets/dev_app_secrets.yml"),
     depends_on=[dev_db],
     container_volumes={
-        '/Users/fancyechocui/Downloads/jstachio-1.0.0': {  # Host path
-            'bind': '/data/jstachio',  # Container path
+        '/Users/fancyechocui/Downloads/h2o-3-dc7bfa726edfad1436ab8a855ec77ba6067cd083': {  # Host path
+            'bind': '/data/h2o',  # Container path
             'mode': 'rw'  # Read-write access
         }
     }

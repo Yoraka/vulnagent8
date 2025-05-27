@@ -179,7 +179,7 @@ class SecurityAuditTeam(Team):
         )
 
         # Common file tools base directory
-        common_base_dir = Path("/data/jstachio")
+        common_base_dir = Path("/data/h2o")
 
         reporter_file_tools = FileTools(base_dir=common_base_dir)
         reporter_shell_tools = ShellTools()
@@ -197,7 +197,7 @@ class SecurityAuditTeam(Team):
             auditor_file_tools,
             auditor_shell_tools,
             # session_state_toolkit,
-            save_report_to_repository,
+            # save_report_to_repository, # <--- Removed as per user request
             read_report_from_repository
         ]
         
