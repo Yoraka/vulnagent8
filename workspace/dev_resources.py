@@ -33,6 +33,16 @@ dev_db = PgVectorDb(
 )
 
 # -*- Container environment
+
+http_proxy = getenv("HTTP_PROXY")
+https_proxy = getenv("HTTPS_PROXY")
+
+if http_proxy and ("127.0.0.1" in http_proxy or "localhost" in http_proxy):
+    http_proxy = http_proxy.replace("127.0.0.1", "host.docker.internal").replace("localhost", "host.docker.internal")
+
+if https_proxy and ("127.0.0.1" in https_proxy or "localhost" in https_proxy):
+    https_proxy = https_proxy.replace("127.0.0.1", "host.docker.internal").replace("localhost", "host.docker.internal")
+
 container_env = {
     "RUNTIME_ENV": "dev",
     # Get the OpenAI API key and Exa API key from the local environment
@@ -51,6 +61,10 @@ container_env = {
     "WAIT_FOR_DB": dev_db.enabled,
     # Migrate database on startup using alembic
     "MIGRATE_DB": dev_db.enabled,
+    # Add proxy settings from environment
+    "HTTP_PROXY": http_proxy,
+    "HTTPS_PROXY": https_proxy,
+    "NO_PROXY": getenv("NO_PROXY"),
 }
 
 # -*- Streamlit running on port 8501:8501
@@ -100,8 +114,8 @@ dev_playground = FastApi(
     secrets_file=ws_settings.ws_root.joinpath("workspace/secrets/dev_app_secrets.yml"),
     depends_on=[dev_db],
     container_volumes={
-        '/Users/fancyechocui/Downloads/h2o-3-dc7bfa726edfad1436ab8a855ec77ba6067cd083': {  # Host path
-            'bind': '/data/h2o',  # Container path
+        'E:/one-api-main': {  # Host path
+            'bind': '/data/one-api',  # Container path
             'mode': 'rw'  # Read-write access
         }
     }

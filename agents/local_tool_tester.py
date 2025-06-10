@@ -13,7 +13,7 @@ from db.session import db_url
 
 # Hardcoded workspace root path, represents the root of the Java project to be audited.
 # The agent will be instructed that its relative file/shell operations occur within this context.
-HARDCODED_WORKSPACE_PATH = "/data/h2o"
+HARDCODED_WORKSPACE_PATH = "/data/one-api"
 
 def get_local_security_auditor_agent(
     model_id: str = "qwen/qwen3-235b-a22b",
@@ -152,7 +152,7 @@ def get_local_security_auditor_agent(
         agent_id="java_security_auditor_v1",
         user_id=user_id,
         session_id=session_id,
-        model=xAI(id=model_id),
+        model=xAI(id=model_id, max_tokens=10000),
         tools=[shell_tools, file_tools],
         storage=PostgresAgentStorage(table_name="local_tool_tester_sessions", db_url=db_url),
         description=agent_description,

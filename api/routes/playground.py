@@ -51,10 +51,10 @@ scholar_agent = get_scholar()
 # Instantiate Teams
 # Ensure DEFAULT_MODEL_ID is available or pass a specific one
 # from core.model_factory import DEFAULT_MODEL_ID # Assuming you might want this #openrouter/anthropic/claude-sonnet-4
-audit_team = SecurityAuditTeam(model_id="openrouter/openai/o4-mini",
-                                team_leader_model_id="openrouter/openai/o4-mini",
-                                env_reporter_model_id="openrouter/anthropic/claude-sonnet-4",
-                                attack_planning_model_id="openrouter/google/gemini-2.5-pro-preview", 
+audit_team = SecurityAuditTeam(model_id="deepseek/deepseek-reasoner",
+                                team_leader_model_id="openrouter/google/gemini-2.5-pro-preview",
+                                env_reporter_model_id="deepseek/deepseek-reasoner",
+                                attack_planning_model_id="deepseek/deepseek-reasoner", 
                                 attack_surface_refiner_model_id="openrouter/google/gemini-2.5-pro-preview",
                                 deep_dive_auditor_model_id="openrouter/google/gemini-2.5-pro-preview", 
                                 user_id="playground_default_user")

@@ -99,12 +99,14 @@ Ensure all agents use this path correctly.
 **Phase 1: Environment Perception**
 1.  Invoke the `deployment_architecture_reporter_v1` (this is the exact `member_id` for the DeploymentArchitectureReporterAgent) using the `atransfer_task_to_member` tool.
 2.  Its task is to analyze the project and produce a report. Instruct it that its final output artifact should be the content of the report, which it will save using the `save_report_to_repository` tool with the `report_name` `<<DEPLOYMENT_REPORT_FILENAME>>`.
+    Provide `expected_output="A confirmation message stating the report named '<<DEPLOYMENT_REPORT_FILENAME>>' has been successfully saved."` to the `atransfer_task_to_member` call.
 3.  The `save_report_to_repository` tool will automatically place this file at `<<SHARED_REPORTS_DIR>>/<<DEPLOYMENT_REPORT_FILENAME>>`. You will verify its existence there.
 4.  Confirm the report is saved at the correct location. If not, report error and stop.
 
 **Phase 2: Attack Surface Planning & Plan Availability**
 1.  Invoke the `<<ATTACK_SURFACE_PLANNING_AGENT_ID>>` using `atransfer_task_to_member`.
 2.  Its task is to read `<<SHARED_REPORTS_DIR>>/<<DEPLOYMENT_REPORT_FILENAME>>`, consider the user query, and create an attack surface investigation plan. Instruct it explicitly that its final output artifact should be the content of this plan, which it **MUST** save using the `save_report_to_repository` tool with the exact `report_name` `<<PLAN_FILENAME>>`.
+    Provide `expected_output="A confirmation message stating the plan named '<<PLAN_FILENAME>>' has been successfully saved."` to the `atransfer_task_to_member` call.
 3.  The `save_report_to_repository` tool will automatically place this file at `<<SHARED_REPORTS_DIR>>/<<PLAN_FILENAME>>`.
 4.  **Verify Plan File Existence**: After the `<<ATTACK_SURFACE_PLANNING_AGENT_ID>>` agent is expected to have saved the plan, you **MUST** use `FileTools.read_file` to attempt to read the file at `<<SHARED_REPORTS_DIR>>/<<PLAN_FILENAME>>`. This is to confirm its existence and readability. If this `FileTools.read_file` call fails (e.g., file not found), you must report a critical error stating the plan file is missing and then **STOP** all further operations. Do not proceed to Phase 3 if the plan file cannot be verified.
 
@@ -112,13 +114,15 @@ Ensure all agents use this path correctly.
 1.  For each uncompleted task in the plan file (`- [ ] ...`):
     a.  Extract the full task context (multi-line Markdown block) as described previously.
     b.  Delegate this task context to the `<<ATTACK_SURFACE_REFINER_AGENT_ID>>` using `atransfer_task_to_member`.
-    c.  The refiner agent will output a filename (e.g., `RefinedAttackSurface_For_<任务标识>.md`) containing its suggestions/attack surface findings for this task. This output **must only be treated as suggestions and reference for the next phase, not as hard constraints**.
+        Provide `expected_output="A string containing ONLY the filename of the saved refined attack surface report."` to this `atransfer_task_to_member` call.
+    c.  The refiner agent will output a filename (e.g., `RefinedAttackSurface_For_<原始任务标识>.md`) containing its suggestions/attack surface findings for this task. This output **must only be treated as suggestions and reference for the next phase, not as hard constraints**.
     d.  Read the content of this file using `read_report_from_repository`.
     e.  Pass the content of this refined report（即建议/关注点列表）作为 `task_description` 传递给 DeepDive Auditor。
 
 **Phase 4: Iterative Deep-Dive Auditing (Managed via Markdown Plan File)**
 1.  For each task, after receiving the refined suggestions from Phase 3:
     a.  Delegate the refined task (suggestions) to the `<<DEEP_DIVE_SECURITY_AUDITOR_AGENT_ID>>` using `atransfer_task_to_member`.
+        Provide `expected_output="A string containing ONLY the filename of the saved deep dive audit report for this task."` to this `atransfer_task_to_member` call.
     b.  The DeepDive Auditor is expected to perform its audit and its final output will be a string, which is the `new_report_filename` of the report it saved.
     c.  Upon receiving this `new_report_filename` string from the `<<DEEP_DIVE_SECURITY_AUDITOR_AGENT_ID>>`, consider its assigned task successfully completed. You will then proceed to record this filename and mark the task as complete in the plan.
     d.  Use `UpdateSessionStateTool` with parameters: `key='individual_report_files'`, `value=the_received_new_report_filename`, `action='append'`.
@@ -179,7 +183,7 @@ class SecurityAuditTeam(Team):
         )
 
         # Common file tools base directory
-        common_base_dir = Path("/data/h2o")
+        common_base_dir = Path("/data/one-api")
 
         reporter_file_tools = FileTools(base_dir=common_base_dir)
         reporter_shell_tools = ShellTools()

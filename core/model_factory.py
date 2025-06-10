@@ -6,6 +6,7 @@ DEFAULT_MODEL_ID = "openrouter/google/gemini-2.5-flash-preview-05-20"
 from agno.models.xai import xAI
 from agno.models.openai import OpenAIChat
 from agno.models.openai.like import OpenAILike # Import OpenAILike
+from agno.models.deepseek import DeepSeek
 # Add other necessary model imports here if expanding
 # from agno.models.google import Gemini # Example if re-added
 # from agno.models.openrouter import OpenRouter # Example - Agno might not have a dedicated OpenRouter class
@@ -35,6 +36,9 @@ def get_model_instance(model_id_str: str) -> Any:
             base_url="https://openrouter.ai/api/v1",
             api_key=openrouter_api_key
         )
+    elif model_id_str.startswith("deepseek/"):
+        deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
+        return DeepSeek(id=model_id_str.split("/")[1], api_key=deepseek_api_key)
     elif model_id_str == "grok-3" or "grok" in model_id_str.lower():
         return xAI(id=model_id_str if model_id_str else "grok-3")
     elif model_id_str == "gpt-4o" or "gpt-4" in model_id_str.lower(): 
