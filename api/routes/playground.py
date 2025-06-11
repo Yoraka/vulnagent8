@@ -9,6 +9,7 @@ from fastapi import APIRouter
 
 from agents.sage import get_sage
 from agents.scholar import get_scholar
+from agents.icla_test_agent import get_icla_test_agent
 from workflows.security_audit_team import SecurityAuditTeam
 from workflows.minimal_test_team import MinimalTestTeam
 from workflows.security_audit_orchestrator import SecurityAuditWorkflow
@@ -47,6 +48,7 @@ finance_agent = Agent(
 # Get Sage and Scholar agent instances
 sage_agent = get_sage()
 scholar_agent = get_scholar()
+icla_agent = get_icla_test_agent(user_id="playground_default_user", model_id="deepseek/deepseek-r1-0528:deepinfra")
 
 # Instantiate Teams
 # Ensure DEFAULT_MODEL_ID is available or pass a specific one
@@ -64,7 +66,7 @@ playground_router = APIRouter(prefix="/playground", tags=["Playground"])
 
 # Instantiate Playground
 playground_instance = Playground(
-    agents=[web_agent, finance_agent, sage_agent, scholar_agent], 
+    agents=[web_agent, finance_agent, sage_agent, scholar_agent, icla_agent], 
     teams=[audit_team, minimal_test_team_instance],
     workflows=[security_audit_workflow_instance]
 )
