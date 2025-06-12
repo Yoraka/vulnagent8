@@ -48,7 +48,7 @@ finance_agent = Agent(
 # Get Sage and Scholar agent instances
 sage_agent = get_sage()
 scholar_agent = get_scholar()
-icla_agent = get_icla_test_agent(user_id="playground_default_user", model_id="deepseek/deepseek-r1-0528:deepinfra")
+icla_agent = get_icla_test_agent(user_id="playground_default_user", model_id="deepseek-reasoner")
 
 # Instantiate Teams
 # Ensure DEFAULT_MODEL_ID is available or pass a specific one
