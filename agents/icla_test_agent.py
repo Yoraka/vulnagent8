@@ -13,13 +13,15 @@ from agno.tools.shell import ShellTools
 from agno.tools.file import FileTools
 from agno.tools import tool
 from agno.utils.pprint import pprint_run_response
+from agno.utils.log import logger
 
 from db.session import db_url
+from core.context_managed_agent import ContextManagedAgent
 
 # 硬编码的工作空间路径
 HARDCODED_WORKSPACE_PATH = Path("/data/one-api")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-if not OPENROUTER_API_KEY:
+openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
+if not openrouter_api_key:
     raise ValueError("OPENROUTER_API_KEY is not set")
 
 deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
@@ -405,9 +407,8 @@ def calculate_intrinsic_reward(agent: Agent, information_gain_score: float, reas
 🧠 **推理**: {reasoning}
 📈 **策略建议**: 继续采用获得正奖励的行为模式！"""
 
-@tool
-def terminate_with_report(agent: Agent, final_report: str) -> str:
-    """终止任务并提交最终报告 - 但首先进行Alex Chen专业标准检查"""
+def _terminate_with_report_conditional(agent: Agent, final_report: str) -> str:
+    """内部函数：根据假设数量决定是否允许终止"""
     
     # 🚨 Alex Chen的专业底线检查 - 防止绕过validate_conclusion_readiness
     _ensure_state_structure(agent)
@@ -491,6 +492,34 @@ def terminate_with_report(agent: Agent, final_report: str) -> str:
 {json.dumps(summary, indent=2, ensure_ascii=False)}
 
 🎉 **Alex Chen的话**: "这才是配得上'深挖'名号的工作！用户会为这种深度感到满意的！" """
+
+# 根据假设数量动态创建工具
+def _create_terminate_tool(agent: Agent):
+    """根据当前假设数量动态创建 terminate_with_report 工具"""
+    _ensure_state_structure(agent)
+    working_memory = agent.session_state.get("working_memory", {})
+    hca_history = working_memory.get("hca_history", [])
+    total_hypotheses = len(hca_history)
+    
+    # 如果假设数量达到要求，启用stop_after_tool_call
+    stop_after_call = total_hypotheses >= 15
+    
+    @tool(stop_after_tool_call=stop_after_call, show_result=True)
+    def terminate_with_report(agent: Agent, final_report: str) -> str:
+        """终止任务并提交最终报告 - 但首先进行Alex Chen专业标准检查"""
+        return _terminate_with_report_conditional(agent, final_report)
+    
+    return terminate_with_report
+
+def _create_terminate_tool_static(stop_after_call: bool = False):
+    """创建静态版本的 terminate_with_report 工具"""
+    
+    @tool(stop_after_tool_call=stop_after_call, show_result=True)
+    def terminate_with_report(agent: Agent, final_report: str) -> str:
+        """终止任务并提交最终报告 - 但首先进行Alex Chen专业标准检查"""
+        return _terminate_with_report_conditional(agent, final_report)
+    
+    return terminate_with_report
 
 @tool
 def create_archive_file(agent: Agent, filename: str, content: str) -> str:
@@ -650,7 +679,61 @@ def _record_completed_hca_cycle(agent: Agent):
         }
         
         working_memory["hca_history"].append(cycle_record)
+        
+        # 🔄 同时记录到ContextManagedAgent的完整历史中
+        if hasattr(agent, 'record_hca_to_history'):
+            hca_data = {
+                'id': f"H-{runtime_state.get('hypothesis_count', 1):02d}",
+                'hypothesis': current_hypothesis.get("content", ""),
+                'challenge': current_challenge.get("content", ""),
+                'adaptation': current_adaptation.get("changes", ""),
+                'status': 'completed',
+                'evidence': current_challenge.get("content", ""),
+                'cvss_score': None,  # 可以从内容中提取
+                'files_analyzed': [],  # 可以从工具调用历史中提取
+                'tools_used': []  # 可以从工具调用历史中提取
+            }
+            agent.record_hca_to_history(hca_data)
+        
+        # 🚀 检查是否需要更新 terminate_with_report 工具
+        _update_terminate_tool_if_needed(agent)
+        
         # 💡 不清理当前状态！让Agent能看到adapted状态
+
+def _update_terminate_tool_if_needed(agent: Agent):
+    """检查假设数量，如果达到15个就更新 terminate_with_report 工具为可终止版本"""
+    _ensure_state_structure(agent)
+    working_memory = agent.session_state.get("working_memory", {})
+    hca_history = working_memory.get("hca_history", [])
+    total_hypotheses = len(hca_history)
+    
+    # 如果刚好达到15个假设，更新工具
+    if total_hypotheses == 15:
+        logger.info(f"🚀 假设数量达到{total_hypotheses}个，启用终止工具的stop_after_tool_call功能")
+        
+        # 创建新的可终止版本的工具
+        new_terminate_tool = _create_terminate_tool_static(stop_after_call=True)
+        
+        # 尝试更新Agent的工具列表
+        if hasattr(agent, 'tools') and agent.tools:
+            # 找到并替换现有的 terminate_with_report 工具
+            for i, tool in enumerate(agent.tools):
+                tool_name = None
+                if hasattr(tool, 'name'):
+                    tool_name = tool.name
+                elif hasattr(tool, '__name__'):
+                    tool_name = tool.__name__
+                elif hasattr(tool, 'function') and hasattr(tool.function, 'name'):
+                    tool_name = tool.function.name
+                elif callable(tool) and hasattr(tool, '__name__'):
+                    tool_name = tool.__name__
+                
+                if tool_name == 'terminate_with_report':
+                    agent.tools[i] = new_terminate_tool
+                    logger.info(f"✅ 已更新第{i}个工具为可终止版本")
+                    break
+        
+        logger.info(f"🎯 Alex Chen专业标准已达成！现在调用terminate_with_report将自动结束Agent运行")
 
 def _record_hca_cycle_to_history(agent: Agent):
     """将完成的HCA循环记录到历史"""
@@ -1070,12 +1153,14 @@ def get_icla_test_agent(
     user_id: Optional[str] = None,
     session_id: Optional[str] = None,
     debug_mode: bool = True,
-) -> Agent:
+    max_context_tokens: int = 200000,  # 降低到8000，更容易触发监控
+) -> ContextManagedAgent:
     """创建基于 ICLA 框架的测试代理"""
     
     shell_tools = ShellTools(base_dir=HARDCODED_WORKSPACE_PATH)
     file_tools = FileTools(base_dir=HARDCODED_WORKSPACE_PATH)
     
+    # 创建基础工具列表（不包含动态工具）
     icla_tools = [
         # 新架构核心工具
         view_current_state,
@@ -1087,8 +1172,7 @@ def get_icla_test_agent(
         
         # 传统工具（兼容性）
         update_main_md,
-        calculate_intrinsic_reward, 
-        terminate_with_report,
+        calculate_intrinsic_reward,
         create_archive_file,
         
         # 基础工具
@@ -1096,10 +1180,22 @@ def get_icla_test_agent(
         file_tools
     ]
     
+    # 初始创建静态的 terminate_with_report 工具（假设数量为0时不会停止）
+    initial_terminate_tool = _create_terminate_tool_static(stop_after_call=False)
+    icla_tools.append(initial_terminate_tool)
+    
     additional_context = dedent(f"""\
         <context>
         目标项目位于: {str(HARDCODED_WORKSPACE_PATH)}。所有相对路径操作都相对于此路径。
         </context>
+
+        现在有一个上下文管理工具正在静默运作，它只会保留近三次工具调用的完整返回，对更旧的工具调用结果进行截断，这意味着如果你连续调用四次工具，那么第四次调用工具后你将无法看到完整的第一次工具调用结果（因为它被上下文管理工具主动压缩了）。
+        你需要频繁将工具调用的结果进行总结，不能只是不断地只输出 tool call 而不包含你自己的思考，那会导致你根本不知道你之前调用工具是为了什么，你的发言暂时不会被压缩。
+        你不需要担心上下文管理工具会截断你的发言，因为你的发言暂时不会被压缩。
+
+        **重要提醒**: 在工具调用时，只生成标准的JSON格式工具调用，不要添加任何额外的结束标记如<tool_call_end>或<｜tool▁call▁end｜>等，框架会自动处理结束标记。
+
+        summarize_context 工具可以用于在上下文管理工具截断你的行动时，由你自己将你的行动进行总结，并插入到你的历史中。你要相对详细地总结你的行动历史。
         
         ## ⚡ 关键概念区分（避免错误评估）
 
@@ -1406,16 +1502,28 @@ def get_icla_test_agent(
         }
     }
     
-    return Agent(
+    return ContextManagedAgent(
         name="ICLA-TestAgent",
         agent_id="icla_test_agent_v1",
         user_id=user_id,
         session_id=session_id,
-        model=DeepSeek(id=model_id, api_key=deepseek_api_key),
+        # model=OllamaNoStream(
+        #     id="qwq:latest", 
+        #     host="http://10.66.22.15:11430",
+        #     timeout=120,
+        #     keep_alive="10m",
+        #     options={"stream": False},
+        # ),
+        model=OpenAILike(id=model_id, base_url="https://openrouter.ai/api/v1", api_key=openrouter_api_key),
         tools=icla_tools,
         tool_hooks=[icla_orchestrator_hook],  # 🎯 核心协调器钩子！
         storage=PostgresAgentStorage(table_name="icla_test_sessions", db_url=db_url),
         description=agent_description,
+        # 上下文管理参数
+        max_context_tokens=max_context_tokens,
+        warning_threshold=0.7,   # 70%时警告
+        truncate_threshold=0.85,  # 85%时截断
+        keep_ratio=0.5,          # 保留50%最新内容
         instructions=[
             "# ICLA Agent - 奖励驱动的自学习漏洞发现者",
             "",
@@ -1523,10 +1631,35 @@ def get_icla_test_agent(
             "- 威胁建模: '基于攻击链思维，我认为主要威胁已暴露/还有盲区'",
             "- 边际价值: '我的直觉告诉我继续探索价值有限/仍有重要发现可能'",
             "",
+            "## 🧠 **上下文管理机制协作**",
+            "",
+            "你正在一个**自动上下文管理环境**中工作，需要理解并配合以下机制：",
+            "",
+            "### **📊 状态感知**",
+            "- 每次工具调用后会看到\"📊 上下文管理状态\"信息",
+            "- 🟢正常 → 🟡中等使用 → ⚠️警告(70%) → 🚨即将截断(80%)",
+            "- 截断只影响messages对话历史，session_state中的HCA历史完全安全",
+            "",
+            "### **🔧 配合策略**",  
+            "当看到**⚠️警告阶段**(70%+)时：",
+            "- 继续正常的HCA流程，截断不会影响当前循环状态",
+            "- 了解即将进入自动压缩模式，早期对话历史将被压缩",
+            "",
+            "当看到**🚨即将截断**(80%+)时：",
+            "- 继续当前分析，截断只影响最旧的messages",
+            "- 理解早期详细对话会被压缩，但HCA状态和历史完全保留",
+            "- 截断后可使用view_hca_history()查看完整分析进度",
+            "",
+            "### **🔄 截断后恢复**",
+            "截断发生后：",
+            "1. 首先调用view_hca_history()了解之前的分析进展",
+            "2. 基于HCA历史继续深入分析，而非重新开始",
+            "3. 理解这是正常的长期分析流程，不是错误",
+            "",
             "## 新架构工具集",
             "**状态透明工具**:",
             "- **view_current_state()**: 查看当前HCA状态和进度 + **奖励分析**",
-            "- **view_hca_history()**: 查看HCA历史循环记录",
+            "- **view_hca_history()**: 查看HCA历史循环记录（特别是截断后）",
             "",
             "**状态更新工具**:",
             "- **start_new_hypothesis(content)**: 开始新假设",
@@ -1605,12 +1738,20 @@ def get_icla_test_agent(
         num_history_responses=8,
         enable_agentic_memory=True,
         add_state_in_messages=True,
-        read_chat_history=True
+        read_chat_history=True,
+        keep_recent_tool_messages=5,
+        max_tool_message_chars=250
     )
 
 async def main():
     """测试 ICLA 代理"""
     print("--- ICLA 测试代理示例 ---")
+    
+    # 启用调试日志
+    from agno.utils.log import set_log_level_to_debug
+    set_log_level_to_debug()
+    print("🔧 已启用DEBUG日志级别")
+    
     icla_agent = get_icla_test_agent(user_id="icla_test_user", model_id="deepseek/deepseek-r1-0528:deepinfra")
     
     test_prompts = [

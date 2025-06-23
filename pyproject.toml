@@ -27,7 +27,8 @@ dependencies = [
   "pycountry",
   "pywin32==310; sys_platform == 'win32'",
   "cohere",
-  "infinity-client"
+  "infinity-client",
+  "ollama"
 ]
 
 [project.optional-dependencies]
