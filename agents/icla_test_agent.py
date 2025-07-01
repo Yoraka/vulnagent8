@@ -19,7 +19,7 @@ from db.session import db_url
 from core.context_managed_agent import ContextManagedAgent
 
 # 硬编码的工作空间路径
-HARDCODED_WORKSPACE_PATH = Path("/data/one-api")
+HARDCODED_WORKSPACE_PATH = Path("/data/target_code")
 openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
 if not openrouter_api_key:
     raise ValueError("OPENROUTER_API_KEY is not set")

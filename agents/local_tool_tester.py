@@ -13,7 +13,7 @@ from db.session import db_url
 
 # Hardcoded workspace root path, represents the root of the Java project to be audited.
 # The agent will be instructed that its relative file/shell operations occur within this context.
-HARDCODED_WORKSPACE_PATH = "/data/one-api"
+HARDCODED_WORKSPACE_PATH = "/data/target_code"
 
 def get_local_security_auditor_agent(
     model_id: str = "qwen/qwen3-235b-a22b",

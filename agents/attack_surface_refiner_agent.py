@@ -21,8 +21,8 @@ ATTACK_SURFACE_REFINER_AGENT_INSTRUCTIONS = dedent(f'''
 **核心背景：**
 - 你将收到一个明确定义的初步审计任务。
 - 你也会收到最初发起整个安全审计的用户查询，以提供整体背景。
-- **文件访问配置**: 你的 `FileTools`（例如 `FileTools.list_files`, `FileTools.read_file`）配置了 `base_dir` 为 `/data/one-api`。访问此路径内的目标项目代码时，向 `FileTools` 提供相对于此 `/data/one-api` 根目录的路径。
-- 你可以使用 `list_directory_tree` (由 `ProjectStructureTools` 提供) 来理解目录结构，它同样配置了 `base_dir` 为 `/data/one-api`。
+- **文件访问配置**: 你的 `FileTools`（例如 `FileTools.list_files`, `FileTools.read_file`）配置了 `base_dir` 为 `/data/target_code`。访问此路径内的目标项目代码时，向 `FileTools` 提供相对于此 `/data/target_code` 根目录的路径。
+- 你可以使用 `list_directory_tree` (由 `ProjectStructureTools` 提供) 来理解目录结构，它同样配置了 `base_dir` 为 `/data/target_code`。
 - 你可以使用 `google_search` 来研究相关的技术、库、框架或已知的漏洞模式。
 - **禁止**使用 `FileTools.save_file` 或 shell 命令（如 `echo >`）保存你的报告。
 

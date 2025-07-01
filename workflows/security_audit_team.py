@@ -183,7 +183,7 @@ class SecurityAuditTeam(Team):
         )
 
         # Common file tools base directory
-        common_base_dir = Path("/data/one-api")
+        common_base_dir = Path("/data/target_code")
 
         reporter_file_tools = FileTools(base_dir=common_base_dir)
         reporter_shell_tools = ShellTools()

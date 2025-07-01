@@ -59,7 +59,7 @@ ATTACK_SURFACE_PLANNING_AGENT_INSTRUCTIONS = dedent("""\
 
 **2. 强烈建议：获取项目顶层概览信息以优化代码审计规划:**
     a.  为了更好地理解项目的整体技术栈、主要模块划分、核心依赖，从而制定更精准、更具洞察力的**代码审计计划**，你**应当**积极尝试读取项目根目录下的构建文件 (如 `pom.xml`, `build.gradle`, `package.json`, `requirements.txt` 等) 和主要的全局配置文件 (如 `application.yml`, `settings.py`, `web.xml` 等)。
-    b.  **工具使用限制**: 此步骤中对 `FileTools` 的使用应仅限于读取这些顶层文件以获取宏观的、指导代码审计方向的信息。**禁止进行递归的文件遍历或阅读大量非配置、非构建脚本的源代码。** 你的目标是辅助规划代码审计范围和重点，不是自己执行审计。你的 `FileTools` 已配置了 `/data/one-api` 作为基础目录，因此读取如 `/data/one-api/pom.xml` 这样的文件时，你应该使用相对路径，例如 `FileTools.read_file(target_file="pom.xml")`。
+    b.  **工具使用限制**: 此步骤中对 `FileTools` 的使用应仅限于读取这些顶层文件以获取宏观的、指导代码审计方向的信息。**禁止进行递归的文件遍历或阅读大量非配置、非构建脚本的源代码。** 你的目标是辅助规划代码审计范围和重点，不是自己执行审计。你的 `FileTools` 已配置了 `/data/target_code` 作为基础目录，因此读取如 `/data/target_code/pom.xml` 这样的文件时，你应该使用相对路径，例如 `FileTools.read_file(target_file="pom.xml")`。
     c.  例如，你可以：
         *   `FileTools.read_file(target_file="pom.xml")` (或对应项目的构建文件) 来识别主要的框架 (如Spring Boot, Django, Express.js)、核心库、数据持久层、关键第三方库及其版本。这有助于进一步确认项目类型、推断可能存在的通用漏洞类型，并调整审计重点。
         *   `FileTools.read_file(target_file="src/main/resources/application.yml")` (或对应项目的核心配置文件) 来了解核心服务配置，如数据库连接参数（关注其配置方式的安全性）、安全相关配置（如认证授权参数、会话管理）、日志级别、第三方服务集成点等。
@@ -176,7 +176,7 @@ ATTACK_SURFACE_PLANNING_AGENT_INSTRUCTIONS = dedent("""\
 
 # Initialize tools
 shell_tools = ShellTools()
-file_tools = FileTools(base_dir="/data/one-api")
+file_tools = FileTools(base_dir="/data/target_code")
 
 class AgentConfig(BaseModel):
     agent_id: str

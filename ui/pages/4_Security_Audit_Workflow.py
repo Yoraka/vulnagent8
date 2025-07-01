@@ -56,8 +56,8 @@ col1, col2 = st.columns([0.7, 0.3])
 
 with col1:
     project_path = st.text_input(
-        "Enter the full workspace_path of the project to analyze (e.g., /data/one-api):",
-        value=st.session_state.get("audit_project_path", "/data/one-api") # Default to a path accessible within a typical Docker setup
+        "Enter the full workspace_path of the project to analyze (e.g., /data/target_code):",
+        value=st.session_state.get("audit_project_path", "/data/target_code") # Default to a path accessible within a typical Docker setup
     )
     st.session_state.audit_project_path = project_path
 

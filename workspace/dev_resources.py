@@ -114,8 +114,8 @@ dev_playground = FastApi(
     secrets_file=ws_settings.ws_root.joinpath("workspace/secrets/dev_app_secrets.yml"),
     depends_on=[dev_db],
     container_volumes={
-        'E:/one-api-main': {  # Host path
-            'bind': '/data/one-api',  # Container path
+        getenv("TARGET_CODE_PATH"): {  # Host path
+            'bind': '/data/target_code',  # Container path
             'mode': 'rw'  # Read-write access
         }
     }
