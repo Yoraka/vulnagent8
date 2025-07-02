@@ -24,7 +24,7 @@
 
 在运行此 CLI 之前，请确保您的系统上已安装以下软件：
 
-- Python 3.7+ (以及 pip)
+- Python 3.12 (以及 pip)
 - Node.js (以及 npm/npx)
 - Docker Desktop (需要正在运行)
 - Git
