@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 import os
 from pathlib import Path
+import yaml
 
 from agno.agent import Agent
 from agno.models.openai import OpenAIChat, OpenAILike
@@ -20,13 +21,12 @@ from core.context_managed_agent import ContextManagedAgent
 
 # 硬编码的工作空间路径
 HARDCODED_WORKSPACE_PATH = Path("/data/target_code")
-openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
-if not openrouter_api_key:
-    raise ValueError("OPENROUTER_API_KEY is not set")
 
-deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
-if not deepseek_api_key:
-    raise ValueError("DEEPSEEK_API_KEY is not set")
+def load_model_config():
+    config_path = os.path.join(os.path.dirname(__file__), '../workspace/secrets/dev_app_secrets.yml')
+    with open(config_path, 'r', encoding='utf-8') as f:
+        secrets = yaml.safe_load(f)
+    return secrets.get('MODEL_CONFIG', {})
 
 # ====== 新架构：状态透明工具 ======
 
@@ -1149,13 +1149,19 @@ def _clear_previous_hca_state(agent: Agent):
     runtime_state["current_phase"] = "hypothesis"
 
 def get_icla_test_agent(
-    model_id: str = "gpt-4o",
     user_id: Optional[str] = None,
     session_id: Optional[str] = None,
     debug_mode: bool = True,
     max_context_tokens: int = 200000,  # 降低到8000，更容易触发监控
 ) -> ContextManagedAgent:
     """创建基于 ICLA 框架的测试代理"""
+    
+    model_config = load_model_config()
+    model = OpenAILike(
+        id=model_config.get('id'),
+        base_url=model_config.get('base_url'),
+        api_key=model_config.get('api_key'),
+    )
     
     shell_tools = ShellTools(base_dir=HARDCODED_WORKSPACE_PATH)
     file_tools = FileTools(base_dir=HARDCODED_WORKSPACE_PATH)
@@ -1507,14 +1513,7 @@ def get_icla_test_agent(
         agent_id="icla_test_agent_v1",
         user_id=user_id,
         session_id=session_id,
-        # model=OllamaNoStream(
-        #     id="qwq:latest", 
-        #     host="http://10.66.22.15:11430",
-        #     timeout=120,
-        #     keep_alive="10m",
-        #     options={"stream": False},
-        # ),
-        model=OpenAILike(id=model_id, base_url="https://openrouter.ai/api/v1", api_key=openrouter_api_key),
+        model=model,
         tools=icla_tools,
         tool_hooks=[icla_orchestrator_hook],  # 🎯 核心协调器钩子！
         storage=PostgresAgentStorage(table_name="icla_test_sessions", db_url=db_url),
@@ -1752,7 +1751,7 @@ async def main():
     set_log_level_to_debug()
     print("🔧 已启用DEBUG日志级别")
     
-    icla_agent = get_icla_test_agent(user_id="icla_test_user", model_id="deepseek/deepseek-r1-0528:deepinfra")
+    icla_agent = get_icla_test_agent(user_id="icla_test_user")
     
     test_prompts = [
         "开始你的漏洞发现任务。你可以先调用view_current_state()查看状态，然后分析项目代码。",
