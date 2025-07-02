@@ -31,6 +31,9 @@
 
 您可以通过 `agno-cli check-env` 命令检查这些依赖项。
 
+您的电脑必须可以访问 docker.io, github.com, npm 等网站，您也许需要拥有 docker.io 的账号以顺利拉取对应镜像。
+如果有 VPN 可以使用，请在终端中设置环境变量以使其生效，例如 $env:HTTPS_PROXY = "http://127.0.0.1:7890" 命令即设置终端的 https 请求使用 Clash VPN, http 同理。
+
 ### 从源码运行
 
 1.  确保您有 `agno_cli.py` 文件。
